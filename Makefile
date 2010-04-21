@@ -14,7 +14,7 @@ install: build
 	install -d $(DESTDIR)$(sbindir)
 	install -s $(TARGETS) $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(udevdir)
-	install -d 644 *.rules $(DESTDIR)$(udevdir)
+	install -m 644 *.rules $(DESTDIR)$(udevdir)
 
 clean:
 	rm -f $(TARGET) *.o *~
