@@ -17,6 +17,6 @@ install: build
 	install -m 644 *.rules $(DESTDIR)$(udevdir)
 
 clean:
-	rm -f $(TARGET) *.o *~
+	rm -f $(TARGETS) *.o *~
 
 vdagent: vdagent.o
