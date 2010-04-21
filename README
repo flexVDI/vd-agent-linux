@@ -1,0 +1,14 @@
+
+spice agent for linux
+=====================
+
+reads spice agent events, parses the mouse events,
+feeds them into the kernel via uinput.
+
+Not handled: multiple displays.
+
+enjoy,
+  Gerd
+
+--
+Gerd Hoffmann <kraxel@redhat.com>
