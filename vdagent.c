@@ -35,7 +35,7 @@ typedef struct __attribute__ ((__packed__)) vmc_message {
 
 /* variables */
 
-static const char *portdev = "/dev/virtio-ports/org.redhat.spice.0";
+static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
 
 static int vmc, tablet;
