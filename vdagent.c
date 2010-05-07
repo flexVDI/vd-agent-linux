@@ -11,40 +11,25 @@
 
 /* spice structs */
 
-typedef struct __attribute__ ((__packed__)) vmc_header {
+#include <spice/vd_agent.h>
+
+typedef struct VDAgentHeader {
     uint32_t port;
     uint32_t size;
-} vmc_header;
-
-typedef struct __attribute__ ((__packed__)) vmc_mouse {
-    uint32_t x;
-    uint32_t y;
-    uint32_t buttons;
-    uint8_t  display;
-} vmc_mouse;
-
-typedef struct __attribute__ ((__packed__)) vmc_message {
-    uint32_t protocol;
-    uint32_t type;
-    uint64_t opaque;
-    uint32_t size;
-    union {
-        vmc_mouse mouse;
-    };
-} vmc_message;
+} VDAgentHeader;
 
 /* variables */
 
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
 
-static int vmc, tablet;
+static int vdagent, tablet;
 static int debug = 0;
 static int width = 1024, height = 768; /* FIXME: don't hardcode */
 
 /* uinput */
 
-void uinput_setup(void)
+static void uinput_setup(void)
 {
     struct uinput_user_dev device = {
         .name = "spice vdagent tablet",
@@ -64,6 +49,8 @@ void uinput_setup(void)
     ioctl(tablet, UI_SET_KEYBIT, BTN_LEFT);
     ioctl(tablet, UI_SET_KEYBIT, BTN_MIDDLE);
     ioctl(tablet, UI_SET_KEYBIT, BTN_RIGHT);
+    ioctl(tablet, UI_SET_KEYBIT, BTN_GEAR_UP);
+    ioctl(tablet, UI_SET_KEYBIT, BTN_GEAR_DOWN);
 
     /* abs ptr */
     ioctl(tablet, UI_SET_EVBIT, EV_ABS);
@@ -77,7 +64,7 @@ void uinput_setup(void)
     }
 }
 
-void uinput_send_event(__u16 type, __u16 code, __s32 value)
+static void uinput_send_event(__u16 type, __u16 code, __s32 value)
 {
     struct input_event event = {
         .type  = type,
@@ -95,18 +82,20 @@ void uinput_send_event(__u16 type, __u16 code, __s32 value)
 
 /* spice port */
 
-void do_mouse(vmc_mouse *mouse)
+static void do_mouse(VDAgentMouseState *mouse)
 {
     static const struct {
         const char *name;
         int mask;
         int btn;
     } btns[] = {
-        { .name = "left",   .mask =  2, .btn = BTN_LEFT   },
-        { .name = "middle", .mask =  4, .btn = BTN_MIDDLE },
-        { .name = "right",  .mask =  8, .btn = BTN_RIGHT  },
+        { .name = "left",   .mask =  VD_AGENT_LBUTTON_MASK, .btn = BTN_LEFT      },
+        { .name = "middle", .mask =  VD_AGENT_MBUTTON_MASK, .btn = BTN_MIDDLE    },
+        { .name = "right",  .mask =  VD_AGENT_RBUTTON_MASK, .btn = BTN_RIGHT     },
+        { .name = "up",     .mask =  VD_AGENT_UBUTTON_MASK, .btn = BTN_GEAR_UP   },
+        { .name = "down",   .mask =  VD_AGENT_DBUTTON_MASK, .btn = BTN_GEAR_DOWN },
     };
-    static vmc_mouse last;
+    static VDAgentMouseState last;
     int i, down;
 
     if (last.x != mouse->x) {
@@ -135,28 +124,48 @@ void do_mouse(vmc_mouse *mouse)
     last = *mouse;
 }
 
-void vmc_read(void)
+static void do_monitors(VDAgentMonitorsConfig *monitors)
 {
-    vmc_header header;
-    vmc_message *message;
+    int i;
+
+    if (!debug)
+        return;
+    fprintf(stderr, "monitors: %d\n", monitors->num_of_monitors);
+    for (i = 0; i < monitors->num_of_monitors; i++) {
+        fprintf(stderr, "  #%d: size %dx%d pos +%d+%d depth %d\n", i,
+                monitors->monitors[i].width, monitors->monitors[i].height,
+                monitors->monitors[i].x, monitors->monitors[i].y,
+                monitors->monitors[i].depth);
+    }
+}
+
+void vdagent_read(void)
+{
+    VDAgentHeader header;
+    VDAgentMessage *message;
+    void *data;
     int rc;
 
-    rc = read(vmc, &header, sizeof(header));
+    rc = read(vdagent, &header, sizeof(header));
     if (rc != sizeof(header)) {
-        fprintf(stderr, "vmc header read error (%d/%zd)\n", rc, sizeof(header));
+        fprintf(stderr, "vdagent header read error (%d/%zd)\n", rc, sizeof(header));
         exit(1);
     }
 
     message = malloc(header.size);
-    rc = read(vmc, message, header.size);
+    rc = read(vdagent, message, header.size);
     if (rc != header.size) {
-        fprintf(stderr, "vmc message read error (%d/%d)\n", rc, header.size);
+        fprintf(stderr, "vdagent message read error (%d/%d)\n", rc, header.size);
         exit(1);
     }
+    data = message->data;
 
     switch (message->type) {
-    case 1:
-        do_mouse(&message->mouse);
+    case VD_AGENT_MOUSE_STATE:
+        do_mouse(data);
+        break;
+    case VD_AGENT_MONITORS_CONFIG:
+        do_monitors(data);
         break;
     default:
         if (debug)
@@ -175,7 +184,7 @@ static void usage(FILE *fp)
             "vdagent -- handle spice agent mouse via uinput\n"
             "options:\n"
             "  -h         print this text\n"
-            "  -d         don't daemonize, print debug messages\n"
+            "  -d         print debug messages (and don't daemonize)\n"
             "  -x width   set display width       [%d]\n"
             "  -y height  set display height      [%d]\n"
             "  -s <port>  set virtio serial port  [%s]\n"
@@ -232,8 +241,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    vmc = open(portdev, O_RDWR);
-    if (-1 == vmc) {
+    vdagent = open(portdev, O_RDWR);
+    if (-1 == vdagent) {
         fprintf(stderr, "open %s: %s\n", portdev, strerror(errno));
         exit(1);
     }
@@ -248,7 +257,7 @@ int main(int argc, char *argv[])
     if (!debug)
         daemonize();
     for (;;) {
-        vmc_read();
+        vdagent_read();
     }
     return 0;
 }
