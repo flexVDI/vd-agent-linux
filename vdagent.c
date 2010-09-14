@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/select.h>
 
 #include <linux/input.h>
 #include <linux/uinput.h>
@@ -12,6 +13,9 @@
 /* spice structs */
 
 #include <spice/vd_agent.h>
+
+#include "udscs.h"
+#include "vdagentd-proto.h"
 
 typedef struct VDAgentHeader {
     uint32_t port;
@@ -26,6 +30,7 @@ static const char *uinput = "/dev/uinput";
 static int vdagent, tablet;
 static int debug = 0;
 static int width = 1024, height = 768; /* FIXME: don't hardcode */
+static struct udscs_server *server = NULL;
 
 /* uinput */
 
@@ -209,6 +214,66 @@ void daemonize(void)
     }
 }
 
+void client_read_complete(struct udscs_connection *conn,
+    struct udscs_message_header *header, const uint8_t *data)
+{
+    switch (header->type) {
+    case VDAGENTD_GUEST_XORG_RESOLUTION: {
+        struct vdagentd_guest_xorg_resolution *res =
+            (struct vdagentd_guest_xorg_resolution *)data;
+
+        if (header->size != sizeof(*res)) {
+            /* FIXME destroy connection, but this will cause a double
+               free of data */
+            break;
+        }
+
+        width = res->width;
+        height = res->height;
+        close(tablet);
+        tablet = open(uinput, O_RDWR);
+        if (-1 == tablet) {
+            fprintf(stderr, "open %s: %s\n", uinput, strerror(errno));
+            exit(1);
+        }
+        uinput_setup();
+        break;
+    }
+    default:
+        fprintf(stderr, "unknown message from vdagent client: %u, ignoring\n",
+                header->type);
+    }
+}
+
+void main_loop(void)
+{
+    fd_set readfds, writefds;
+    int n, nfds;
+
+    for (;;) {
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+
+        nfds = udscs_server_fill_fds(server, &readfds, &writefds);
+
+        FD_SET(vdagent, &readfds);
+        if (vdagent >= nfds)
+            nfds = vdagent + 1;
+
+        n = select(nfds, &readfds, &writefds, NULL, NULL);
+        if (n == -1) {
+            if (errno == EINTR)
+                continue;
+            perror("select");
+            exit(1);
+        }
+
+        udscs_server_handle_fds(server, &readfds, &writefds);
+        if (FD_ISSET(vdagent, &readfds))
+            vdagent_read();
+    }
+}
+
 int main(int argc, char *argv[])
 {
     int c;
@@ -241,11 +306,17 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* Open virtio port connection */
     vdagent = open(portdev, O_RDWR);
     if (-1 == vdagent) {
         fprintf(stderr, "open %s: %s\n", portdev, strerror(errno));
         exit(1);
     }
+
+    /* Setup communication with vdagent process(es) */
+    server = udscs_create_server(VDAGENTD_SOCKET, client_read_complete, NULL);
+    if (!server)
+        exit(1);
 
     tablet = open(uinput, O_RDWR);
     if (-1 == tablet) {
@@ -256,8 +327,10 @@ int main(int argc, char *argv[])
 
     if (!debug)
         daemonize();
-    for (;;) {
-        vdagent_read();
-    }
+
+    main_loop();
+
+    udscs_destroy_server(server);
+
     return 0;
 }

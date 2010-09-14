@@ -8,7 +8,7 @@ CFLAGS	+= -g -Wall
 CFLAGS	+= -g -Wall
 CFLAGS  += $(shell pkg-config --cflags spice-protocol)
 
-TARGETS	:= vdagent
+TARGETS	:= vdagent client
 
 build: $(TARGETS)
 
@@ -21,4 +21,5 @@ install: build
 clean:
 	rm -f $(TARGETS) *.o *~
 
-vdagent: vdagent.o
+vdagent: vdagent.o udscs.o
+client: client.o udscs.o
