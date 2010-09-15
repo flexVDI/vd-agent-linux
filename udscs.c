@@ -169,6 +169,9 @@ void udscs_destroy_connection(struct udscs_connection *conn)
 {
     struct udscs_buf *wbuf, *next_wbuf;
 
+    if (conn->disconnect_callback)
+        conn->disconnect_callback(conn);
+
     wbuf = conn->write_buf;
     while (wbuf) {
         next_wbuf = wbuf->next;
@@ -330,6 +333,7 @@ static void udscs_do_read(struct udscs_connection *conn)
     ssize_t n;
     size_t to_read;
     uint8_t *dest;
+    int r;
 
     if (conn->header_read < sizeof(conn->header)) {
         to_read = sizeof(conn->header) - conn->header_read;
@@ -344,8 +348,6 @@ static void udscs_do_read(struct udscs_connection *conn)
         if (errno == EINTR)
             return;
         perror("reading from unix domain socket");
-        if (conn->disconnect_callback)
-            conn->disconnect_callback(conn);
         udscs_destroy_connection(conn);
         return;
     }
@@ -354,8 +356,13 @@ static void udscs_do_read(struct udscs_connection *conn)
         conn->header_read += n;
         if (conn->header_read == sizeof(conn->header)) {
             if (conn->header.size == 0) {
-                if (conn->read_callback)
-                    conn->read_callback(conn, &conn->header, NULL);
+                if (conn->read_callback) {
+                    r = conn->read_callback(conn, &conn->header, NULL);
+                    if (r == -1) {
+                        udscs_destroy_connection(conn);
+                        return;
+                    }
+                }
                 conn->header_read = 0;
             } else {
                 conn->data.pos = 0;
@@ -363,8 +370,6 @@ static void udscs_do_read(struct udscs_connection *conn)
                 conn->data.buf = malloc(conn->data.size);
                 if (!conn->data.buf) {
                     fprintf(stderr, "out of memory, disconnecting client\n");
-                    if (conn->disconnect_callback)
-                        conn->disconnect_callback(conn);
                     udscs_destroy_connection(conn);
                     return;
                 }
@@ -373,8 +378,13 @@ static void udscs_do_read(struct udscs_connection *conn)
     } else {
         conn->data.pos += n;
         if (conn->data.pos == conn->data.size) {
-            if (conn->read_callback)
-                conn->read_callback(conn, &conn->header, conn->data.buf);
+            if (conn->read_callback) {
+                r = conn->read_callback(conn, &conn->header, conn->data.buf);
+                if (r == -1) {
+                    udscs_destroy_connection(conn);
+                    return;
+                }
+            }
             free(conn->data.buf);
             conn->header_read = 0;
             memset(&conn->data, 0, sizeof(conn->data));
@@ -400,8 +410,6 @@ static void udscs_do_write(struct udscs_connection *conn)
         if (errno == EINTR)
             return;
         perror("writing to unix domain socket");
-        if (conn->disconnect_callback)
-            conn->disconnect_callback(conn);
         udscs_destroy_connection(conn);
         return;
     }

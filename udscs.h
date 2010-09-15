@@ -34,24 +34,30 @@ struct udscs_message_header {
     uint8_t data[0];
 };
 
-typedef void (*udscs_read_callback)(struct udscs_connection *conn,
+/* Callbacks with this type will be called when a complete message has been
+   received. Sometimes the callback may want to close the connection, in this
+   case do *not* call udscs_destroy_connection from the callback. The desire
+   to close the connection can be indicated be returning -1 from the callback,
+   in other cases return 0. */
+typedef int (*udscs_read_callback)(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data);
-/* Note udscs will destroy the connection in question itself after
-   this callback has completed! */
+/* Callbacks with this type will be called when the connection is disconnected.
+   Note:
+   1) udscs will destroy the connection in question itself after
+      this callback has completed!
+   2) This callback is always called, even if the disconnect is initiated
+      by the udscs user through returning -1 from a read callback, or
+      by explictly calling udscs_destroy_connection */
 typedef void (*udscs_disconnect_callback)(struct udscs_connection *conn);
 
-/* Create a unix domain socket named name and start listening on it.
-   read_callback will get called when a complete message has been
-   received, and disconnect_callback when a client is disconnected. */
+/* Create a unix domain socket named name and start listening on it. */
 struct udscs_server *udscs_create_server(const char *socketname,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback);
 
 void udscs_destroy_server(struct udscs_server *server);
 
-/* Connect to a unix domain socket named name. read_callback will get called
-   when a complete message has been received, and disconnect_callback when a
-   client is disconnected. */
+/* Connect to a unix domain socket named name. */
 struct udscs_connection *udscs_connect(const char *socketname,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback);

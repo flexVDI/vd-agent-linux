@@ -19,3 +19,5 @@ Various small things:
 -don't go burn 100% cpu when a client disconnects
 -make virtio communication non blocking
 -make uinput communication non blocking
+-vdagentd: multiple debug levels (allow not detaching from tty without
+ flooding the tty with mouse coordinates)

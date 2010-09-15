@@ -214,7 +214,7 @@ void daemonize(void)
     }
 }
 
-void client_read_complete(struct udscs_connection *conn,
+int client_read_complete(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
     switch (header->type) {
@@ -222,11 +222,8 @@ void client_read_complete(struct udscs_connection *conn,
         struct vdagentd_guest_xorg_resolution *res =
             (struct vdagentd_guest_xorg_resolution *)data;
 
-        if (header->size != sizeof(*res)) {
-            /* FIXME destroy connection, but this will cause a double
-               free of data */
-            break;
-        }
+        if (header->size != sizeof(*res))
+            return -1;
 
         width = res->width;
         height = res->height;
@@ -243,6 +240,8 @@ void client_read_complete(struct udscs_connection *conn,
         fprintf(stderr, "unknown message from vdagent client: %u, ignoring\n",
                 header->type);
     }
+
+    return 0;
 }
 
 void main_loop(void)
