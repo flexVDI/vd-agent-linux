@@ -30,9 +30,10 @@
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
 
-void daemon_read_complete(struct udscs_connection *conn,
+int daemon_read_complete(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -50,12 +51,11 @@ int main(int argc, char *argv[])
 
     x11 = vdagent_x11_create(client, verbose);
     if (!x11) {
-        udscs_destroy_connection(client);
+        udscs_destroy_connection(&client);
         exit(1);
     }
 
-    /* FIXME exit when server is gone */
-    for (;;) {
+    while (client) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
@@ -73,13 +73,12 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        udscs_client_handle_fds(client, &readfds, &writefds);
         if (FD_SET(x11_fd, &readfds))
             vdagent_x11_do_read(x11);
+        udscs_client_handle_fds(&client, &readfds, &writefds);
     }
 
     vdagent_x11_destroy(x11);
-    udscs_destroy_connection(client);
 
-    return 0;    
+    return 0;
 }

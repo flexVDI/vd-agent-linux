@@ -5,7 +5,6 @@ udevdir	?= /lib/udev/rules.d
 
 CFLAGS	?= -O2
 CFLAGS	+= -g -Wall
-CFLAGS	+= -g -Wall
 CFLAGS  += $(shell pkg-config --cflags spice-protocol)
 
 TARGETS	:= vdagentd vdagent

@@ -62,7 +62,8 @@ struct udscs_connection *udscs_connect(const char *socketname,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback);
 
-void udscs_destroy_connection(struct udscs_connection *conn);
+/* The contents of connp will be made NULL */
+void udscs_destroy_connection(struct udscs_connection **connp);
 
 
 /* Given an usdcs server or client fill the fd_sets pointed to by readfds and
@@ -79,7 +80,10 @@ int udscs_client_fill_fds(struct udscs_connection *conn, fd_set *readfds,
 void udscs_server_handle_fds(struct udscs_server *server, fd_set *readfds,
         fd_set *writefds);
 
-void udscs_client_handle_fds(struct udscs_connection *conn, fd_set *readfds,
+/* Note the connection may be destroyed (when disconnected) by this call
+   in this case the disconnect calllback will get called before the
+   destruction and the contents of connp will be made NULL */
+void udscs_client_handle_fds(struct udscs_connection **connp, fd_set *readfds,
         fd_set *writefds);
 
 

@@ -249,6 +249,7 @@ void main_loop(void)
     fd_set readfds, writefds;
     int n, nfds;
 
+    /* FIXME catch sigterm and stop on it */
     for (;;) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
