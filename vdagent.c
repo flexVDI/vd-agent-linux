@@ -28,6 +28,7 @@
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
+#include "vdagent-x11.h"
 
 void daemon_read_complete(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
@@ -37,27 +38,32 @@ void daemon_read_complete(struct udscs_connection *conn,
 int main(int argc, char *argv[])
 {
     struct udscs_connection *client;
+    struct vdagent_x11 *x11;
     fd_set readfds, writefds;
-    int n, nfds;
+    int n, nfds, x11_fd;
+    /* FIXME make configurable */
+    int verbose = 1;
     
     client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL);
     if (!client)
         exit(1);
 
-    /* test test */
-    struct vdagentd_guest_xorg_resolution res = { 1680, 1050 };
-    struct udscs_message_header header = {
-        VDAGENTD_GUEST_XORG_RESOLUTION,
-        0,
-        sizeof(res),
-    };
-    udscs_write(client, &header, (uint8_t *)&res);
+    x11 = vdagent_x11_create(client, verbose);
+    if (!x11) {
+        udscs_destroy_connection(client);
+        exit(1);
+    }
 
+    /* FIXME exit when server is gone */
     for (;;) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
         nfds = udscs_client_fill_fds(client, &readfds, &writefds);
+        x11_fd = vdagent_x11_get_fd(x11);
+        FD_SET(x11_fd, &readfds);
+        if (x11_fd >= nfds)
+            nfds = x11_fd + 1;
 
         n = select(nfds, &readfds, &writefds, NULL, NULL);
         if (n == -1) {
@@ -68,8 +74,11 @@ int main(int argc, char *argv[])
         }
 
         udscs_client_handle_fds(client, &readfds, &writefds);
+        if (FD_SET(x11_fd, &readfds))
+            vdagent_x11_do_read(x11);
     }
 
+    vdagent_x11_destroy(x11);
     udscs_destroy_connection(client);
 
     return 0;    

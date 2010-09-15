@@ -22,4 +22,7 @@ clean:
 	rm -f $(TARGETS) *.o *~
 
 vdagentd: vdagentd.o udscs.o
-vdagent: vdagent.o udscs.o
+	$(CC) -o $@ $^
+
+vdagent: vdagent.o vdagent-x11.o udscs.o
+	$(CC) -o $@ $^ -lX11
