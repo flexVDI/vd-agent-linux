@@ -54,8 +54,10 @@ static void uinput_setup(void)
     ioctl(tablet, UI_SET_KEYBIT, BTN_LEFT);
     ioctl(tablet, UI_SET_KEYBIT, BTN_MIDDLE);
     ioctl(tablet, UI_SET_KEYBIT, BTN_RIGHT);
-    ioctl(tablet, UI_SET_KEYBIT, BTN_GEAR_UP);
-    ioctl(tablet, UI_SET_KEYBIT, BTN_GEAR_DOWN);
+
+    /* wheel */
+    ioctl(tablet, UI_SET_EVBIT, EV_REL);
+    ioctl(tablet, UI_SET_RELBIT, REL_WHEEL);
 
     /* abs ptr */
     ioctl(tablet, UI_SET_EVBIT, EV_ABS);
@@ -89,16 +91,19 @@ static void uinput_send_event(__u16 type, __u16 code, __s32 value)
 
 static void do_mouse(VDAgentMouseState *mouse)
 {
-    static const struct {
+    struct button_s {
         const char *name;
         int mask;
         int btn;
-    } btns[] = {
+    };
+    static const struct button_s btns[] = {
         { .name = "left",   .mask =  VD_AGENT_LBUTTON_MASK, .btn = BTN_LEFT      },
         { .name = "middle", .mask =  VD_AGENT_MBUTTON_MASK, .btn = BTN_MIDDLE    },
         { .name = "right",  .mask =  VD_AGENT_RBUTTON_MASK, .btn = BTN_RIGHT     },
-        { .name = "up",     .mask =  VD_AGENT_UBUTTON_MASK, .btn = BTN_GEAR_UP   },
-        { .name = "down",   .mask =  VD_AGENT_DBUTTON_MASK, .btn = BTN_GEAR_DOWN },
+    };
+    static const struct button_s wheel[] = {
+        { .name = "up",     .mask =  VD_AGENT_UBUTTON_MASK, .btn = 1  },
+        { .name = "down",   .mask =  VD_AGENT_DBUTTON_MASK, .btn = -1 },
     };
     static VDAgentMouseState last;
     int i, down;
@@ -121,6 +126,15 @@ static void do_mouse(VDAgentMouseState *mouse)
             fprintf(stderr, "mouse: btn-%s %s\n",
                     btns[i].name, down ? "down" : "up");
         uinput_send_event(EV_KEY, btns[i].btn, down);
+    }
+    for (i = 0; i < sizeof(wheel)/sizeof(wheel[0]); i++) {
+        if ((last.buttons & wheel[i].mask) == (mouse->buttons & wheel[i].mask))
+            continue;
+        if (mouse->buttons & wheel[i].mask) {
+            if (debug)
+                fprintf(stderr, "mouse: wheel-%s\n", wheel[i].name);
+            uinput_send_event(EV_REL, REL_WHEEL, wheel[i].btn);
+        }
     }
     if (debug)
         fprintf(stderr, "mouse: syn\n");
