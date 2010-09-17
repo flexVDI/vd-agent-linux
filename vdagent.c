@@ -36,15 +36,39 @@ int daemon_read_complete(struct udscs_connection *conn,
     return 0;
 }
 
+static void usage(FILE *fp)
+{
+    fprintf(fp,
+            "vdagent -- spice agent xorg client\n"
+            "options:\n"
+            "  -h         print this text\n"
+            "  -d         print debug messages\n");
+}
+
 int main(int argc, char *argv[])
 {
     struct udscs_connection *client;
     struct vdagent_x11 *x11;
     fd_set readfds, writefds;
-    int n, nfds, x11_fd;
-    /* FIXME make configurable */
-    int verbose = 1;
-    
+    int c, n, nfds, x11_fd;
+    int verbose = 0;
+
+    for (;;) {
+        if (-1 == (c = getopt(argc, argv, "dh")))
+            break;
+        switch (c) {
+        case 'd':
+            verbose++;
+            break;
+        case 'h':
+            usage(stdout);
+            exit(0);
+        default:
+            usage(stderr);
+            exit(1);
+        }
+    }
+
     client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL);
     if (!client)
         exit(1);
