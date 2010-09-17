@@ -109,12 +109,12 @@ static void do_mouse(VDAgentMouseState *mouse)
     int i, down;
 
     if (last.x != mouse->x) {
-        if (debug)
+        if (debug > 1)
             fprintf(stderr, "mouse: abs-x %d\n", mouse->x);
         uinput_send_event(EV_ABS, ABS_X, mouse->x);
     }
     if (last.y != mouse->y) {
-        if (debug)
+        if (debug > 1)
             fprintf(stderr, "mouse: abs-y %d\n", mouse->y);
         uinput_send_event(EV_ABS, ABS_Y, mouse->y);
     }
@@ -122,7 +122,7 @@ static void do_mouse(VDAgentMouseState *mouse)
         if ((last.buttons & btns[i].mask) == (mouse->buttons & btns[i].mask))
             continue;
         down = !!(mouse->buttons & btns[i].mask);
-        if (debug)
+        if (debug > 1)
             fprintf(stderr, "mouse: btn-%s %s\n",
                     btns[i].name, down ? "down" : "up");
         uinput_send_event(EV_KEY, btns[i].btn, down);
@@ -131,12 +131,12 @@ static void do_mouse(VDAgentMouseState *mouse)
         if ((last.buttons & wheel[i].mask) == (mouse->buttons & wheel[i].mask))
             continue;
         if (mouse->buttons & wheel[i].mask) {
-            if (debug)
+            if (debug > 1)
                 fprintf(stderr, "mouse: wheel-%s\n", wheel[i].name);
             uinput_send_event(EV_REL, REL_WHEEL, wheel[i].btn);
         }
     }
-    if (debug)
+    if (debug > 1)
         fprintf(stderr, "mouse: syn\n");
     uinput_send_event(EV_SYN, SYN_REPORT, 0);
 
