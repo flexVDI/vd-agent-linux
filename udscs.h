@@ -34,6 +34,9 @@ struct udscs_message_header {
     uint8_t data[0];
 };
 
+/* Callbacks with this type will be called when a new connection to a
+   server is accepted. */
+typedef void (*udscs_connect_callback)(struct udscs_connection *conn);
 /* Callbacks with this type will be called when a complete message has been
    received. Sometimes the callback may want to close the connection, in this
    case do *not* call udscs_destroy_connection from the callback. The desire
@@ -52,6 +55,7 @@ typedef void (*udscs_disconnect_callback)(struct udscs_connection *conn);
 
 /* Create a unix domain socket named name and start listening on it. */
 struct udscs_server *udscs_create_server(const char *socketname,
+    udscs_connect_callback connect_callback,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback);
 

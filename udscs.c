@@ -61,6 +61,7 @@ struct udscs_connection {
 struct udscs_server {
     int fd;
     struct udscs_connection connections_head;
+    udscs_connect_callback connect_callback;
     udscs_read_callback read_callback;
     udscs_disconnect_callback disconnect_callback;
 };
@@ -70,6 +71,7 @@ static void udscs_do_read(struct udscs_connection **connp);
 
 
 struct udscs_server *udscs_create_server(const char *socketname,
+    udscs_connect_callback connect_callback,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback)
 {
@@ -111,6 +113,7 @@ struct udscs_server *udscs_create_server(const char *socketname,
         return NULL;
     }
 
+    server->connect_callback = connect_callback;
     server->read_callback = read_callback;
     server->disconnect_callback = disconnect_callback;
 
@@ -258,6 +261,9 @@ static void udscs_server_accept(struct udscs_server *server) {
 
     new_conn->prev = conn;
     conn->next = new_conn;
+
+    if (server->connect_callback)
+        server->connect_callback(new_conn);
 }
 
 void udscs_server_handle_fds(struct udscs_server *server, fd_set *readfds,
