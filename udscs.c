@@ -37,7 +37,7 @@ struct udscs_buf {
     
     struct udscs_buf *next;
 };
-    
+
 struct udscs_connection {
     int fd;
 
@@ -121,6 +121,9 @@ void udscs_destroy_server(struct udscs_server *server)
 {
     struct udscs_connection *conn, *next_conn;
 
+    if (!server)
+        return;
+
     conn = server->connections_head.next;
     while (conn) {
         next_conn = conn->next;
@@ -169,6 +172,9 @@ void udscs_destroy_connection(struct udscs_connection **connp)
 {
     struct udscs_buf *wbuf, *next_wbuf;
     struct udscs_connection *conn = *connp;
+
+    if (!conn)
+        return;
 
     if (conn->disconnect_callback)
         conn->disconnect_callback(conn);

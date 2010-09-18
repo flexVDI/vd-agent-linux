@@ -16,10 +16,7 @@ owner is and then only send messages to / accept messages from
 agents whose unix domain socket has the same uid.
 
 Various small things:
--make virtio communication non blocking
 -make uinput communication non blocking
--vdagentd: multiple debug levels (allow not detaching from tty without
- flooding the tty with mouse coordinates)
 -remove width and height options from vdagentd
  -maybe not create an input device at all until we've gotten a
   width / height, this would mean also not connecting to the virtio

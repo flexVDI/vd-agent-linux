@@ -66,7 +66,7 @@ struct udscs_connection *udscs_connect(const char *socketname,
 void udscs_destroy_connection(struct udscs_connection **connp);
 
 
-/* Given an usdcs server or client fill the fd_sets pointed to by readfds and
+/* Given an udscs server or client fill the fd_sets pointed to by readfds and
    writefds for select() usage.
 
    Return value: value of the highest fd + 1 */

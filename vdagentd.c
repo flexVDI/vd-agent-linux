@@ -16,6 +16,7 @@
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
+#include "vdagent-virtio-port.h"
 
 typedef struct VDAgentHeader {
     uint32_t port;
@@ -27,10 +28,11 @@ typedef struct VDAgentHeader {
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
 
-static int vdagent, tablet;
+static int tablet;
 static int debug = 0;
 static int width = 1024, height = 768; /* FIXME: don't hardcode */
 static struct udscs_server *server = NULL;
+static struct vdagent_virtio_port *virtio_port = NULL;
 
 /* uinput */
 
@@ -158,41 +160,26 @@ static void do_monitors(VDAgentMonitorsConfig *monitors)
     }
 }
 
-void vdagent_read(void)
+int virtio_port_read_complete(
+        struct vdagent_virtio_port *port,
+        VDIChunkHeader *chunk_header,
+        VDAgentMessage *message_header,
+        uint8_t *data)
 {
-    VDAgentHeader header;
-    VDAgentMessage *message;
-    void *data;
-    int rc;
-
-    rc = read(vdagent, &header, sizeof(header));
-    if (rc != sizeof(header)) {
-        fprintf(stderr, "vdagent header read error (%d/%zd)\n", rc, sizeof(header));
-        exit(1);
-    }
-
-    message = malloc(header.size);
-    rc = read(vdagent, message, header.size);
-    if (rc != header.size) {
-        fprintf(stderr, "vdagent message read error (%d/%d)\n", rc, header.size);
-        exit(1);
-    }
-    data = message->data;
-
-    switch (message->type) {
+    switch (message_header->type) {
     case VD_AGENT_MOUSE_STATE:
-        do_mouse(data);
+        do_mouse((VDAgentMouseState *)data);
         break;
     case VD_AGENT_MONITORS_CONFIG:
-        do_monitors(data);
+        do_monitors((VDAgentMonitorsConfig *)data);
         break;
     default:
         if (debug)
-            fprintf(stderr, "unknown message type %d\n", message->type);
+            fprintf(stderr, "unknown message type %d\n", message_header->type);
         break;
     }
 
-    free(message);
+    return 0;
 }
 
 /* main */
@@ -263,16 +250,14 @@ void main_loop(void)
     fd_set readfds, writefds;
     int n, nfds;
 
-    /* FIXME catch sigterm and stop on it */
-    for (;;) {
+    while (virtio_port) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
         nfds = udscs_server_fill_fds(server, &readfds, &writefds);
-
-        FD_SET(vdagent, &readfds);
-        if (vdagent >= nfds)
-            nfds = vdagent + 1;
+        n = vdagent_virtio_port_fill_fds(virtio_port, &readfds, &writefds);
+        if (n >= nfds)
+            nfds = n + 1;
 
         n = select(nfds, &readfds, &writefds, NULL, NULL);
         if (n == -1) {
@@ -283,8 +268,7 @@ void main_loop(void)
         }
 
         udscs_server_handle_fds(server, &readfds, &writefds);
-        if (FD_ISSET(vdagent, &readfds))
-            vdagent_read();
+        vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
     }
 }
 
@@ -321,11 +305,10 @@ int main(int argc, char *argv[])
     }
 
     /* Open virtio port connection */
-    vdagent = open(portdev, O_RDWR);
-    if (-1 == vdagent) {
-        fprintf(stderr, "open %s: %s\n", portdev, strerror(errno));
+    virtio_port = vdagent_virtio_port_create(portdev,
+                                             virtio_port_read_complete, NULL);
+    if (!virtio_port)
         exit(1);
-    }
 
     /* Setup communication with vdagent process(es) */
     server = udscs_create_server(VDAGENTD_SOCKET, client_read_complete, NULL);
@@ -345,6 +328,7 @@ int main(int argc, char *argv[])
     main_loop();
 
     udscs_destroy_server(server);
+    vdagent_virtio_port_destroy(&virtio_port);
 
     return 0;
 }
