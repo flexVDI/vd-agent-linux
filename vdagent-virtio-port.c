@@ -110,6 +110,9 @@ void vdagent_virtio_port_destroy(struct vdagent_virtio_port **portp)
 int vdagent_virtio_port_fill_fds(struct vdagent_virtio_port *port,
         fd_set *readfds, fd_set *writefds)
 {
+    if (!port)
+        return -1;
+
     FD_SET(port->fd, readfds);
     if (port->write_buf)
         FD_SET(port->fd, writefds);
@@ -120,6 +123,9 @@ int vdagent_virtio_port_fill_fds(struct vdagent_virtio_port *port,
 void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **portp,
         fd_set *readfds, fd_set *writefds)
 {
+    if (!*portp)
+        return;
+
     if (FD_ISSET((*portp)->fd, readfds))
         vdagent_virtio_port_do_read(portp);
 

@@ -206,6 +206,9 @@ int udscs_server_fill_fds(struct udscs_server *server, fd_set *readfds,
     struct udscs_connection *conn;
     int nfds = server->fd + 1;
 
+    if (!server)
+        return -1;
+
     FD_SET(server->fd, readfds);
 
     conn = server->connections_head.next;
@@ -223,6 +226,9 @@ int udscs_server_fill_fds(struct udscs_server *server, fd_set *readfds,
 int udscs_client_fill_fds(struct udscs_connection *conn, fd_set *readfds,
         fd_set *writefds)
 {
+    if (!conn)
+        return -1;
+
     FD_SET(conn->fd, readfds);
     if (conn->write_buf)
         FD_SET(conn->fd, writefds);
@@ -271,6 +277,9 @@ void udscs_server_handle_fds(struct udscs_server *server, fd_set *readfds,
 {
     struct udscs_connection *conn, *next_conn;
 
+    if (!server)
+        return;
+
     if (FD_ISSET(server->fd, readfds))
         udscs_server_accept(server);
 
@@ -287,6 +296,9 @@ void udscs_server_handle_fds(struct udscs_server *server, fd_set *readfds,
 void udscs_client_handle_fds(struct udscs_connection **connp, fd_set *readfds,
         fd_set *writefds)
 {
+    if (!*connp)
+        return;
+
     if (FD_ISSET((*connp)->fd, readfds))
         udscs_do_read(connp);
 

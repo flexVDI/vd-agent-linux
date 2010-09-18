@@ -18,24 +18,24 @@
 #include "vdagentd-proto.h"
 #include "vdagent-virtio-port.h"
 
-typedef struct VDAgentHeader {
-    uint32_t port;
-    uint32_t size;
-} VDAgentHeader;
-
 /* variables */
-
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
 
-static int tablet;
+static int tablet = -1;
+static int connection_count = 0;
 static int debug = 0;
-static int width = 1024, height = 768; /* FIXME: don't hardcode */
+static int width, height;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
 
-/* uinput */
+int virtio_port_read_complete(
+        struct vdagent_virtio_port *port,
+        VDIChunkHeader *chunk_header,
+        VDAgentMessage *message_header,
+        uint8_t *data);
 
+/* uinput */
 static void uinput_setup(void)
 {
     struct uinput_user_dev device = {
@@ -44,6 +44,15 @@ static void uinput_setup(void)
         .absmax  [ ABS_Y ] = height,
     };
     int rc;
+
+    if (tablet != -1)
+        close(tablet);
+
+    tablet = open(uinput, O_RDWR);
+    if (tablet == -1) {
+        fprintf(stderr, "open %s: %s\n", uinput, strerror(errno));
+        exit(1);
+    }
 
     rc = write(tablet, &device, sizeof(device));
     if (rc != sizeof(device)) {
@@ -70,6 +79,16 @@ static void uinput_setup(void)
     if (rc < 0) {
         fprintf(stderr, "%s: create error\n", __FUNCTION__);
         exit(1);
+    }
+
+    /* Now that we have a tablet and thus can forward mouse events,
+       we can open the vdagent virtio port. */
+    if (!virtio_port) {
+        virtio_port = vdagent_virtio_port_create(portdev,
+                                                 virtio_port_read_complete,
+                                                 NULL);
+        if (!virtio_port)
+            exit(1);
     }
 }
 
@@ -191,11 +210,9 @@ static void usage(FILE *fp)
             "options:\n"
             "  -h         print this text\n"
             "  -d         print debug messages (and don't daemonize)\n"
-            "  -x width   set display width       [%d]\n"
-            "  -y height  set display height      [%d]\n"
             "  -s <port>  set virtio serial port  [%s]\n"
             "  -u <dev>   set uinput device       [%s]\n",
-            width, height, portdev, uinput);
+            portdev, uinput);
 }
 
 void daemonize(void)
@@ -215,6 +232,23 @@ void daemonize(void)
     }
 }
 
+void client_connect(struct udscs_connection *conn)
+{
+    /* We don't create the tablet until we've gotten the xorg resolution
+       from the vdagent client */
+    connection_count++;
+}
+
+void client_disconnect(struct udscs_connection *conn)
+{
+    connection_count--;
+    if (connection_count == 0) {
+        close(tablet);
+        tablet = -1;
+        vdagent_virtio_port_destroy(&virtio_port);
+    }
+}
+
 int client_read_complete(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
@@ -223,17 +257,15 @@ int client_read_complete(struct udscs_connection *conn,
         struct vdagentd_guest_xorg_resolution *res =
             (struct vdagentd_guest_xorg_resolution *)data;
 
-        if (header->size != sizeof(*res))
+        if (header->size != sizeof(*res)) {
+            fprintf(stderr,
+                    "guest xorg resolution message has wrong size, disconnecting client\n");
             return -1;
+        }
 
         width = res->width;
         height = res->height;
-        close(tablet);
-        tablet = open(uinput, O_RDWR);
-        if (-1 == tablet) {
-            fprintf(stderr, "open %s: %s\n", uinput, strerror(errno));
-            exit(1);
-        }
+        /* Now that we know the xorg resolution setup the uinput device */
         uinput_setup();
         break;
     }
@@ -250,7 +282,8 @@ void main_loop(void)
     fd_set readfds, writefds;
     int n, nfds;
 
-    while (virtio_port) {
+    /* FIXME catch sigquit and set a flag to quit */
+    for (;;) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
@@ -283,12 +316,6 @@ int main(int argc, char *argv[])
         case 'd':
             debug++;
             break;
-        case 'x':
-            width = atoi(optarg);
-            break;
-        case 'y':
-            height = atoi(optarg);
-            break;
         case 's':
             portdev = optarg;
             break;
@@ -304,23 +331,13 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Open virtio port connection */
-    virtio_port = vdagent_virtio_port_create(portdev,
-                                             virtio_port_read_complete, NULL);
-    if (!virtio_port)
-        exit(1);
-
     /* Setup communication with vdagent process(es) */
-    server = udscs_create_server(VDAGENTD_SOCKET, client_read_complete, NULL);
+    server = udscs_create_server(VDAGENTD_SOCKET,
+                                 client_connect,
+                                 client_read_complete,
+                                 client_disconnect);
     if (!server)
         exit(1);
-
-    tablet = open(uinput, O_RDWR);
-    if (-1 == tablet) {
-        fprintf(stderr, "open %s: %s\n", uinput, strerror(errno));
-        exit(1);
-    }
-    uinput_setup();
 
     if (!debug)
         daemonize();
@@ -328,7 +345,6 @@ int main(int argc, char *argv[])
     main_loop();
 
     udscs_destroy_server(server);
-    vdagent_virtio_port_destroy(&virtio_port);
 
     return 0;
 }
