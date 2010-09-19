@@ -22,6 +22,7 @@
 #ifndef __VDAGENT_H
 #define __VDAGENT_H
 
+#include <spice/vd_agent.h>
 #include "udscs.h"
 
 struct vdagent_x11;
@@ -32,5 +33,8 @@ void vdagent_x11_destroy(struct vdagent_x11 *x11);
 
 int  vdagent_x11_get_fd(struct vdagent_x11 *x11);
 void vdagent_x11_do_read(struct vdagent_x11 *x11);
+
+void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
+                                    VDAgentMonitorsConfig *mon_config);
 
 #endif

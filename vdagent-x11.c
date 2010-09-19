@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
 
@@ -39,6 +40,7 @@ struct vdagent_x11 {
     int root_window;
     int width;
     int height;
+    int has_xrandr;
 };
 
 static void vdagent_x11_send_guest_xorg_res(struct vdagent_x11 *x11);
@@ -48,7 +50,8 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
 {
     struct vdagent_x11 *x11;
     XWindowAttributes attrib;
-    
+    int xrandr_event_base, xrandr_error_base;
+
     x11 = calloc(1, sizeof(*x11));
     if (!x11) {
         fprintf(stderr, "out of memory allocating vdagent_x11 struct\n");
@@ -68,6 +71,11 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->screen = DefaultScreen(x11->display);
     x11->root_window = RootWindow(x11->display, x11->screen);
     x11->fd = ConnectionNumber(x11->display);
+
+    if (XRRQueryExtension(x11->display, &xrandr_event_base, &xrandr_error_base))
+        x11->has_xrandr = 1;
+    else
+        fprintf(stderr, "no xrandr\n");
 
     XSelectInput(x11->display, x11->root_window, StructureNotifyMask);
     XGetWindowAttributes(x11->display, x11->root_window, &attrib);
@@ -89,7 +97,7 @@ void vdagent_x11_destroy(struct vdagent_x11 *x11)
     free(x11);
 }
 
-int  vdagent_x11_get_fd(struct vdagent_x11 *x11)
+int vdagent_x11_get_fd(struct vdagent_x11 *x11)
 {
     return x11->fd;
 }
@@ -138,4 +146,60 @@ static void vdagent_x11_send_guest_xorg_res(struct vdagent_x11 *x11)
     res.height = x11->height;
 
     udscs_write(x11->vdagentd, &header, (uint8_t *)&res);
+}
+
+void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
+                                    VDAgentMonitorsConfig *mon_config)
+{
+    int i, num_sizes = 0;
+    int best = -1;
+    unsigned int closest_diff = -1;
+    XRRScreenSize* sizes;
+    XRRScreenConfiguration* config;
+    Rotation rotation;
+
+    if (!x11->has_xrandr)
+        return;
+
+    if (mon_config->num_of_monitors != 1) {
+        fprintf(stderr, "Only 1 monitor supported, ignoring monitor config\n");
+        return;
+    }
+
+    sizes = XRRSizes(x11->display, x11->screen, &num_sizes);
+    if (!sizes || !num_sizes) {
+        fprintf(stderr, "XRRSizes failed\n");
+        return;
+    }
+
+    /* Find the closest size which will fit within the monitor */
+    for (i = 0; i < num_sizes; i++) {
+        if (sizes[i].width  > mon_config->monitors[0].width ||
+            sizes[i].height > mon_config->monitors[0].height)
+            continue; /* Too large for the monitor */
+
+        unsigned int wdiff = mon_config->monitors[0].width  - sizes[i].width;
+        unsigned int hdiff = mon_config->monitors[0].height - sizes[i].height;
+        unsigned int diff = wdiff * wdiff + hdiff * hdiff;
+        if (diff < closest_diff) {
+            closest_diff = diff;
+            best = i;
+        }
+    }
+
+    if (best == -1) {
+        fprintf(stderr, "no suitable resolution found for monitor\n");
+        return;
+    }
+
+    config = XRRGetScreenInfo(x11->display, x11->root_window);
+    if(!config) {
+        fprintf(stderr, "get screen info failed\n");
+        return;
+    }
+    XRRConfigCurrentConfiguration(config, &rotation);
+    XRRSetScreenConfig(x11->display, config, x11->root_window, best,
+                       rotation, CurrentTime);
+    XRRFreeScreenConfigInfo(config);
+    XFlush(x11->display);
 }

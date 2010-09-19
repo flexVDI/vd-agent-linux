@@ -24,4 +24,4 @@ vdagentd: vdagentd.o udscs.o vdagent-virtio-port.o
 	$(CC) -o $@ $^
 
 vdagent: vdagent.o vdagent-x11.o udscs.o
-	$(CC) -o $@ $^ -lX11
+	$(CC) -o $@ $^ -lX11 -lXrandr

@@ -31,17 +31,15 @@
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
 
+struct vdagent_x11 *x11 = NULL;
+
 int daemon_read_complete(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
     switch (header->type) {
-    case VDAGENTD_MONITORS_CONFIG: {
-        VDAgentMonitorsConfig *mon_config = (VDAgentMonitorsConfig *)data;
-        VDAgentMonConfig *monitors = mon_config->monitors;
-        /* FIXME */
-        printf("monitors config, mon0: %dx%d\n", monitors[0].width, monitors[0].height);
+    case VDAGENTD_MONITORS_CONFIG:
+        vdagent_x11_set_monitor_config(x11, (VDAgentMonitorsConfig *)data);
         break;
-    }
     default:
         fprintf(stderr, "Unknown message from vdagentd type: %d\n",
                 header->type);
@@ -60,8 +58,7 @@ static void usage(FILE *fp)
 
 int main(int argc, char *argv[])
 {
-    struct udscs_connection *client;
-    struct vdagent_x11 *x11;
+    struct udscs_connection *client = NULL;
     fd_set readfds, writefds;
     int c, n, nfds, x11_fd;
     int verbose = 0;
