@@ -26,7 +26,9 @@
 #define VDAGENTD_SOCKET "/tmp/vdagent"
 
 enum {
-    VDAGENTD_GUEST_XORG_RESOLUTION,
+    VDAGENTD_GUEST_XORG_RESOLUTION, /* client -> daemon */
+    VDAGENTD_MONITORS_CONFIG, /* daemon -> client, VDAgentMonitorsConfig
+                                 followed by num_monitors VDAgentMonConfig-s */
 };
 
 struct vdagentd_guest_xorg_resolution {

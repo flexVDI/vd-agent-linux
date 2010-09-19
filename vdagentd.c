@@ -28,6 +28,7 @@ static int debug = 0;
 static int width, height;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
+static VDAgentMonitorsConfig *mon_config = NULL;
 
 int virtio_port_read_complete(
         struct vdagent_virtio_port *port,
@@ -164,19 +165,47 @@ static void do_mouse(VDAgentMouseState *mouse)
     last = *mouse;
 }
 
-static void do_monitors(VDAgentMonitorsConfig *monitors)
+static void do_monitors(
+    struct vdagent_virtio_port *port,
+    VDAgentMonitorsConfig *new_monitors, int port_nr)
 {
-    int i;
+    VDIChunkHeader chunk_header;
+    VDAgentMessage message_header;
+    VDAgentReply reply;
+    struct udscs_message_header udscs_header;
+    int size;
 
-    if (!debug)
-        return;
-    fprintf(stderr, "monitors: %d\n", monitors->num_of_monitors);
-    for (i = 0; i < monitors->num_of_monitors; i++) {
-        fprintf(stderr, "  #%d: size %dx%d pos +%d+%d depth %d\n", i,
-                monitors->monitors[i].width, monitors->monitors[i].height,
-                monitors->monitors[i].x, monitors->monitors[i].y,
-                monitors->monitors[i].depth);
+    /* Store monitor config to send to agents when they connect */
+    size = sizeof(VDAgentMonitorsConfig) +
+           new_monitors->num_of_monitors * sizeof(VDAgentMonConfig);
+    if (!mon_config ||
+            mon_config->num_of_monitors != new_monitors->num_of_monitors) {
+        free(mon_config);
+        mon_config = malloc(size);
+        if (!mon_config) {
+            fprintf(stderr, "out of memory allocting monitors config\n");
+            return;
+        }
     }
+    memcpy(mon_config, new_monitors, size);
+
+    /* Send monitor config to currently connected agents */
+    udscs_header.type = VDAGENTD_MONITORS_CONFIG;
+    udscs_header.opaque = 0;
+    udscs_header.size = size;
+    udscs_server_write_all(server, &udscs_header, (uint8_t *)mon_config);
+
+    /* Acknowledge reception of monitors config to spice server / client */
+    chunk_header.port = port_nr;
+    chunk_header.size = sizeof(VDAgentMessage) + sizeof(VDAgentReply);
+    message_header.protocol = VD_AGENT_PROTOCOL;
+    message_header.type = VD_AGENT_REPLY;
+    message_header.opaque = 0;
+    message_header.size = sizeof(VDAgentReply);
+    reply.type = VD_AGENT_MONITORS_CONFIG;
+    reply.error = VD_AGENT_SUCCESS;
+    vdagent_virtio_port_write(port, &chunk_header, &message_header,
+                              (uint8_t *)&reply);
 }
 
 int virtio_port_read_complete(
@@ -185,12 +214,16 @@ int virtio_port_read_complete(
         VDAgentMessage *message_header,
         uint8_t *data)
 {
+    if (message_header->protocol != VD_AGENT_PROTOCOL) {
+        fprintf(stderr, "message with wrong protocol version ignoring\n");
+        return 0;
+    }
     switch (message_header->type) {
     case VD_AGENT_MOUSE_STATE:
         do_mouse((VDAgentMouseState *)data);
         break;
     case VD_AGENT_MONITORS_CONFIG:
-        do_monitors((VDAgentMonitorsConfig *)data);
+        do_monitors(port, (VDAgentMonitorsConfig *)data, chunk_header->port);
         break;
     default:
         if (debug)
@@ -234,9 +267,19 @@ void daemonize(void)
 
 void client_connect(struct udscs_connection *conn)
 {
+    struct udscs_message_header udscs_header;
+
     /* We don't create the tablet until we've gotten the xorg resolution
        from the vdagent client */
     connection_count++;
+
+    if (mon_config) {
+        udscs_header.type = VDAGENTD_MONITORS_CONFIG;
+        udscs_header.opaque = 0;
+        udscs_header.size = sizeof(VDAgentMonitorsConfig) +
+                        mon_config->num_of_monitors * sizeof(VDAgentMonConfig);
+        udscs_write(conn, &udscs_header, (uint8_t *)mon_config);
+    }
 }
 
 void client_disconnect(struct udscs_connection *conn)

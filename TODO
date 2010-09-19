@@ -17,8 +17,3 @@ agents whose unix domain socket has the same uid.
 
 Various small things:
 -make uinput communication non blocking
--remove width and height options from vdagentd
- -maybe not create an input device at all until we've gotten a
-  width / height, this would mean also not connecting to the virtio
-  serial-port as connecting to the serial port causes client
-  mouse mode

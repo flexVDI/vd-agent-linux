@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/select.h>
+#include <spice/vd_agent.h>
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
@@ -33,6 +34,18 @@
 int daemon_read_complete(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
+    switch (header->type) {
+    case VDAGENTD_MONITORS_CONFIG: {
+        VDAgentMonitorsConfig *mon_config = (VDAgentMonitorsConfig *)data;
+        VDAgentMonConfig *monitors = mon_config->monitors;
+        /* FIXME */
+        printf("monitors config, mon0: %dx%d\n", monitors[0].width, monitors[0].height);
+        break;
+    }
+    default:
+        fprintf(stderr, "Unknown message from vdagentd type: %d\n",
+                header->type);
+    }
     return 0;
 }
 
