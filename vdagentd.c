@@ -46,6 +46,24 @@ static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
 
 /* vdagent virtio port handling */
+static void send_reply(struct vdagent_virtio_port *port, int port_nr,
+    uint32_t type, uint32_t error)
+{
+    VDIChunkHeader chunk_header;
+    VDAgentMessage message_header;
+    VDAgentReply reply;
+
+    chunk_header.port = port_nr;
+    chunk_header.size = sizeof(VDAgentMessage) + sizeof(VDAgentReply);
+    message_header.protocol = VD_AGENT_PROTOCOL;
+    message_header.type = VD_AGENT_REPLY;
+    message_header.opaque = 0;
+    message_header.size = sizeof(VDAgentReply);
+    reply.type = type;
+    reply.error = error;
+    vdagent_virtio_port_write(port, &chunk_header, &message_header,
+                              (uint8_t *)&reply);
+}
 
 static void send_capabilities(struct vdagent_virtio_port *port,
     uint32_t request)
@@ -79,19 +97,20 @@ static void send_capabilities(struct vdagent_virtio_port *port,
     free(caps);
 }
 
-static void do_monitors(
-    struct vdagent_virtio_port *port,
-    VDAgentMonitorsConfig *new_monitors, int port_nr)
+static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
+    VDAgentMessage *message_header, VDAgentMonitorsConfig *new_monitors)
 {
-    VDIChunkHeader chunk_header;
-    VDAgentMessage message_header;
-    VDAgentReply reply;
     struct udscs_message_header udscs_header;
     int size;
 
     /* Store monitor config to send to agents when they connect */
     size = sizeof(VDAgentMonitorsConfig) +
            new_monitors->num_of_monitors * sizeof(VDAgentMonConfig);
+    if (message_header->size != size) {
+        fprintf(stderr, "invalid message size for VDAgentMonitorsConfig\n");
+        return;
+    }
+
     if (!mon_config ||
             mon_config->num_of_monitors != new_monitors->num_of_monitors) {
         free(mon_config);
@@ -110,16 +129,7 @@ static void do_monitors(
     udscs_server_write_all(server, &udscs_header, (uint8_t *)mon_config);
 
     /* Acknowledge reception of monitors config to spice server / client */
-    chunk_header.port = port_nr;
-    chunk_header.size = sizeof(VDAgentMessage) + sizeof(VDAgentReply);
-    message_header.protocol = VD_AGENT_PROTOCOL;
-    message_header.type = VD_AGENT_REPLY;
-    message_header.opaque = 0;
-    message_header.size = sizeof(VDAgentReply);
-    reply.type = VD_AGENT_MONITORS_CONFIG;
-    reply.error = VD_AGENT_SUCCESS;
-    vdagent_virtio_port_write(port, &chunk_header, &message_header,
-                              (uint8_t *)&reply);
+    send_reply(port, port_nr, VD_AGENT_MONITORS_CONFIG, VD_AGENT_SUCCESS);
 }
 
 static void do_capabilities(struct vdagent_virtio_port *port,
@@ -153,12 +163,19 @@ int virtio_port_read_complete(
     }
     switch (message_header->type) {
     case VD_AGENT_MOUSE_STATE:
+        if (message_header->size != sizeof(VDAgentMouseState))
+            goto size_error;
         uinput_do_mouse((VDAgentMouseState *)data, debug > 1);
         break;
     case VD_AGENT_MONITORS_CONFIG:
-        do_monitors(port, (VDAgentMonitorsConfig *)data, chunk_header->port);
+        if (message_header->size < sizeof(VDAgentMonitorsConfig))
+            goto size_error;
+        do_monitors(port, chunk_header->port, message_header,
+                    (VDAgentMonitorsConfig *)data);
         break;
     case VD_AGENT_ANNOUNCE_CAPABILITIES:
+        if (message_header->size < sizeof(VDAgentAnnounceCapabilities))
+            goto size_error;
         do_capabilities(port, message_header,
                         (VDAgentAnnounceCapabilities *)data);
         break;
@@ -168,6 +185,11 @@ int virtio_port_read_complete(
         break;
     }
 
+    return 0;
+
+size_error:
+    fprintf(stderr, "read: invalid message size: %d for message type: %d\n",
+                    message_header->size, message_header->type);
     return 0;
 }
 
