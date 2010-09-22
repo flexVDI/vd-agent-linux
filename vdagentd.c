@@ -1,3 +1,25 @@
+/*  vdagentd.c vdagentd (daemon) code
+
+    Copyright 2010 Red Hat, Inc.
+
+    Red Hat Authors:
+    Hans de Goede <hdegoede@redhat.com>
+    Gerd Hoffmann <kraxel@redhat.com>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or   
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of 
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,37 +115,6 @@ int virtio_port_read_complete(
     return 0;
 }
 
-/* main */
-
-static void usage(FILE *fp)
-{
-    fprintf(fp,
-            "vdagent -- handle spice agent mouse via uinput\n"
-            "options:\n"
-            "  -h         print this text\n"
-            "  -d         print debug messages (and don't daemonize)\n"
-            "  -s <port>  set virtio serial port  [%s]\n"
-            "  -u <dev>   set uinput device       [%s]\n",
-            portdev, uinput);
-}
-
-void daemonize(void)
-{
-    /* detach from terminal */
-    switch (fork()) {
-    case -1:
-        perror("fork");
-        exit(1);
-    case 0:
-        close(0); close(1); close(2);
-        setsid();
-        open("/dev/null",O_RDWR); dup(0); dup(0);
-        break;
-    default:
-        exit(0);
-    }
-}
-
 /* vdagent client handling */
 
 void client_connect(struct udscs_connection *conn)
@@ -185,6 +176,37 @@ int client_read_complete(struct udscs_connection *conn,
     }
 
     return 0;
+}
+
+/* main */
+
+static void usage(FILE *fp)
+{
+    fprintf(fp,
+            "vdagent -- handle spice agent mouse via uinput\n"
+            "options:\n"
+            "  -h         print this text\n"
+            "  -d         print debug messages (and don't daemonize)\n"
+            "  -s <port>  set virtio serial port  [%s]\n"
+            "  -u <dev>   set uinput device       [%s]\n",
+            portdev, uinput);
+}
+
+void daemonize(void)
+{
+    /* detach from terminal */
+    switch (fork()) {
+    case -1:
+        perror("fork");
+        exit(1);
+    case 0:
+        close(0); close(1); close(2);
+        setsid();
+        open("/dev/null",O_RDWR); dup(0); dup(0);
+        break;
+    default:
+        exit(0);
+    }
 }
 
 void main_loop(void)
