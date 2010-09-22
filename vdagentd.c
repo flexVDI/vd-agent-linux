@@ -37,14 +37,47 @@
 /* variables */
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
-
 static int connection_count = 0;
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
+static uint32_t *capabilities = NULL;
+static int capabilities_size = 0;
 
 /* vdagent virtio port handling */
+
+static void send_capabilities(struct vdagent_virtio_port *port,
+    uint32_t request)
+{
+    VDIChunkHeader chunk_header;
+    VDAgentMessage message_header;
+    VDAgentAnnounceCapabilities *caps;
+    int size;
+
+    size = sizeof(*caps) + VD_AGENT_CAPS_BYTES;
+    caps = calloc(1, size);
+    if (!caps) {
+        fprintf(stderr,
+                "out of memory allocating capabilities array (write)\n");
+        return;
+    }
+
+    chunk_header.port = VDP_CLIENT_PORT;
+    chunk_header.size = sizeof(VDAgentMessage) + size;
+    message_header.protocol = VD_AGENT_PROTOCOL;
+    message_header.type = VD_AGENT_ANNOUNCE_CAPABILITIES;
+    message_header.opaque = 0;
+    message_header.size = size;
+    caps->request = request;
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MOUSE_STATE);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MONITORS_CONFIG);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
+
+    vdagent_virtio_port_write(port, &chunk_header, &message_header,
+                              (uint8_t *)caps);
+    free(caps);
+}
 
 static void do_monitors(
     struct vdagent_virtio_port *port,
@@ -64,7 +97,7 @@ static void do_monitors(
         free(mon_config);
         mon_config = malloc(size);
         if (!mon_config) {
-            fprintf(stderr, "out of memory allocting monitors config\n");
+            fprintf(stderr, "out of memory allocating monitors config\n");
             return;
         }
     }
@@ -89,6 +122,25 @@ static void do_monitors(
                               (uint8_t *)&reply);
 }
 
+static void do_capabilities(struct vdagent_virtio_port *port,
+    VDAgentMessage *message_header,
+    VDAgentAnnounceCapabilities *caps)
+{
+    capabilities_size = VD_AGENT_CAPS_SIZE_FROM_MSG_SIZE(message_header->size);
+
+    free(capabilities);
+    capabilities = malloc(capabilities_size * sizeof(uint32_t));
+    if (!capabilities) {
+        fprintf(stderr,
+                "out of memory allocating capabilities array (read)\n");
+        capabilities_size = 0;
+        return;
+    }
+    memcpy(capabilities, caps->caps, capabilities_size * sizeof(uint32_t));
+    if (caps->request)
+        send_capabilities(port, 0);
+}
+
 int virtio_port_read_complete(
         struct vdagent_virtio_port *port,
         VDIChunkHeader *chunk_header,
@@ -105,6 +157,10 @@ int virtio_port_read_complete(
         break;
     case VD_AGENT_MONITORS_CONFIG:
         do_monitors(port, (VDAgentMonitorsConfig *)data, chunk_header->port);
+        break;
+    case VD_AGENT_ANNOUNCE_CAPABILITIES:
+        do_capabilities(port, message_header,
+                        (VDAgentAnnounceCapabilities *)data);
         break;
     default:
         if (debug)
@@ -167,6 +223,8 @@ int client_read_complete(struct udscs_connection *conn,
                                                      NULL);
             if (!virtio_port)
                 exit(1);
+
+            send_capabilities(virtio_port, 1);
         }
         break;
     }
