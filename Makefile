@@ -20,7 +20,7 @@ install: build
 clean:
 	rm -f $(TARGETS) *.o *~
 
-vdagentd: vdagentd.o udscs.o vdagent-virtio-port.o
+vdagentd: vdagentd.o vdagentd-uinput.o udscs.o vdagent-virtio-port.o
 	$(CC) -o $@ $^
 
 vdagent: vdagent.o vdagent-x11.o udscs.o
