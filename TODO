@@ -22,3 +22,4 @@ Various things:
 -make vdagent xorg client try to add "random" resolutions
 -fedora package
 -file or syslog logging
+-only realloc capabilities array if size changes

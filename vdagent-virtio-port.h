@@ -74,14 +74,15 @@ void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **portp,
         fd_set *readfds, fd_set *writefds);
 
 
-/* Queue the message described by chunk_header and message_header and
-   message_header->size bytes of additional data bytes for writing.
+/* Queue a message for delivery
 
    Returns 0 on success -1 on error (only happens when malloc fails) */
 int vdagent_virtio_port_write(
         struct vdagent_virtio_port *port,
-        VDIChunkHeader *chunk_header,
-        VDAgentMessage *message_header,
-        uint8_t *data);
+        uint32_t port_nr,
+        uint32_t message_type,
+        uint32_t message_opaque,
+        uint8_t *data,
+        uint32_t data_size);
 
 #endif

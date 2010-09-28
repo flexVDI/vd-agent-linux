@@ -29,6 +29,10 @@ enum {
     VDAGENTD_GUEST_XORG_RESOLUTION, /* client -> daemon */
     VDAGENTD_MONITORS_CONFIG, /* daemon -> client, VDAgentMonitorsConfig
                                  followed by num_monitors VDAgentMonConfig-s */
+    VDAGENTD_CLIPBOARD_GRAB,    /* opaque = type */
+    VDAGENTD_CLIPBOARD_REQUEST, /* opaque = type */
+    VDAGENTD_CLIPBOARD_DATA,    /* opaque = type, data = data */
+    VDAGENTD_CLIPBOARD_RELEASE, /* no data */
 };
 
 struct vdagentd_guest_xorg_resolution {

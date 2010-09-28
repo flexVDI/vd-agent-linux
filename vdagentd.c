@@ -46,32 +46,11 @@ static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
 
 /* vdagent virtio port handling */
-static void send_reply(struct vdagent_virtio_port *port, int port_nr,
-    uint32_t type, uint32_t error)
-{
-    VDIChunkHeader chunk_header;
-    VDAgentMessage message_header;
-    VDAgentReply reply;
-
-    chunk_header.port = port_nr;
-    chunk_header.size = sizeof(VDAgentMessage) + sizeof(VDAgentReply);
-    message_header.protocol = VD_AGENT_PROTOCOL;
-    message_header.type = VD_AGENT_REPLY;
-    message_header.opaque = 0;
-    message_header.size = sizeof(VDAgentReply);
-    reply.type = type;
-    reply.error = error;
-    vdagent_virtio_port_write(port, &chunk_header, &message_header,
-                              (uint8_t *)&reply);
-}
-
 static void send_capabilities(struct vdagent_virtio_port *port,
     uint32_t request)
 {
-    VDIChunkHeader chunk_header;
-    VDAgentMessage message_header;
     VDAgentAnnounceCapabilities *caps;
-    int size;
+    uint32_t size;
 
     size = sizeof(*caps) + VD_AGENT_CAPS_BYTES;
     caps = calloc(1, size);
@@ -81,27 +60,24 @@ static void send_capabilities(struct vdagent_virtio_port *port,
         return;
     }
 
-    chunk_header.port = VDP_CLIENT_PORT;
-    chunk_header.size = sizeof(VDAgentMessage) + size;
-    message_header.protocol = VD_AGENT_PROTOCOL;
-    message_header.type = VD_AGENT_ANNOUNCE_CAPABILITIES;
-    message_header.opaque = 0;
-    message_header.size = size;
     caps->request = request;
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MOUSE_STATE);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MONITORS_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
 
-    vdagent_virtio_port_write(port, &chunk_header, &message_header,
-                              (uint8_t *)caps);
+    vdagent_virtio_port_write(port, VDP_CLIENT_PORT,
+                              VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
+                              (uint8_t *)caps, size);
     free(caps);
 }
 
 static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
     VDAgentMessage *message_header, VDAgentMonitorsConfig *new_monitors)
 {
+    VDAgentReply reply;
     struct udscs_message_header udscs_header;
-    int size;
+    uint32_t size;
 
     /* Store monitor config to send to agents when they connect */
     size = sizeof(VDAgentMonitorsConfig) +
@@ -129,7 +105,10 @@ static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
     udscs_server_write_all(server, &udscs_header, (uint8_t *)mon_config);
 
     /* Acknowledge reception of monitors config to spice server / client */
-    send_reply(port, port_nr, VD_AGENT_MONITORS_CONFIG, VD_AGENT_SUCCESS);
+    reply.type  = VD_AGENT_MONITORS_CONFIG;
+    reply.error = VD_AGENT_SUCCESS;
+    vdagent_virtio_port_write(port, port_nr, VD_AGENT_REPLY, 0,
+                              (uint8_t *)&reply, sizeof(reply));
 }
 
 static void do_capabilities(struct vdagent_virtio_port *port,
@@ -151,16 +130,70 @@ static void do_capabilities(struct vdagent_virtio_port *port,
         send_capabilities(port, 0);
 }
 
+static void do_clipboard(struct vdagent_virtio_port *port,
+    VDAgentMessage *message_header, uint8_t *message_data)
+{
+    struct udscs_message_header udscs_header;
+    uint8_t *udscs_data = NULL;
+
+    switch (message_header->type) {
+    case VD_AGENT_CLIPBOARD_GRAB: {
+        VDAgentClipboardGrab *grab = (VDAgentClipboardGrab *)message_data;
+        udscs_header.type = VDAGENTD_CLIPBOARD_GRAB;
+        udscs_header.opaque = grab->type;
+        udscs_header.size = 0;
+        if (debug)
+            fprintf(stderr, "Client claimed clipboard owner ship type %u\n",
+                    grab->type);
+        break;
+    }
+    case VD_AGENT_CLIPBOARD_REQUEST: {
+        VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
+        udscs_header.type = VDAGENTD_CLIPBOARD_REQUEST;
+        udscs_header.opaque = req->type;
+        udscs_header.size = 0;
+        if (debug)
+            fprintf(stderr, "Client send clipboard request type %u\n",
+                    req->type);
+        break;
+    }
+    case VD_AGENT_CLIPBOARD: {
+        VDAgentClipboard *clipboard = (VDAgentClipboard *)message_data;
+        udscs_header.type = VDAGENTD_CLIPBOARD_DATA;
+        udscs_header.opaque = clipboard->type;
+        udscs_header.size = message_header->size - sizeof(VDAgentClipboard);
+        udscs_data = clipboard->data;
+        if (debug)
+            fprintf(stderr, "Client send clipboard data type %u\n",
+                    clipboard->type);
+        break;
+    }
+    case VD_AGENT_CLIPBOARD_RELEASE:
+        udscs_header.type = VDAGENTD_CLIPBOARD_RELEASE;
+        udscs_header.opaque = 0;
+        udscs_header.size = 0;
+        if (debug)
+            fprintf(stderr, "Client released clipboard\n");
+        break;
+    }
+
+    /* FIXME send only to agent in active session */
+    udscs_server_write_all(server, &udscs_header, udscs_data);
+}
+
 int virtio_port_read_complete(
         struct vdagent_virtio_port *port,
         VDIChunkHeader *chunk_header,
         VDAgentMessage *message_header,
         uint8_t *data)
 {
+    uint32_t min_size = 0;
+
     if (message_header->protocol != VD_AGENT_PROTOCOL) {
         fprintf(stderr, "message with wrong protocol version ignoring\n");
         return 0;
     }
+
     switch (message_header->type) {
     case VD_AGENT_MOUSE_STATE:
         if (message_header->size != sizeof(VDAgentMouseState))
@@ -179,6 +212,22 @@ int virtio_port_read_complete(
         do_capabilities(port, message_header,
                         (VDAgentAnnounceCapabilities *)data);
         break;
+    case VD_AGENT_CLIPBOARD_GRAB:
+    case VD_AGENT_CLIPBOARD_REQUEST:
+    case VD_AGENT_CLIPBOARD:
+    case VD_AGENT_CLIPBOARD_RELEASE:
+        switch (message_header->type) {
+        case VD_AGENT_CLIPBOARD_GRAB:
+            min_size = sizeof(VDAgentClipboardGrab); break;
+        case VD_AGENT_CLIPBOARD_REQUEST:
+            min_size = sizeof(VDAgentClipboardRequest); break;
+        case VD_AGENT_CLIPBOARD:
+            min_size = sizeof(VDAgentClipboard); break;
+        }
+        if (message_header->size < min_size)
+            goto size_error;
+        do_clipboard(port, message_header, data);
+        break;
     default:
         if (debug)
             fprintf(stderr, "unknown message type %d\n", message_header->type);
@@ -188,12 +237,90 @@ int virtio_port_read_complete(
     return 0;
 
 size_error:
-    fprintf(stderr, "read: invalid message size: %d for message type: %d\n",
+    fprintf(stderr, "read: invalid message size: %u for message type: %u\n",
                     message_header->size, message_header->type);
     return 0;
 }
 
 /* vdagent client handling */
+void do_client_clipboard(struct udscs_connection *conn,
+    struct udscs_message_header *header, const uint8_t *data)
+{
+    if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                 VD_AGENT_CAP_CLIPBOARD_BY_DEMAND))
+        goto error;
+
+    /* FIXME check that this client is from the currently active session */
+    if (0)
+        goto error;
+
+    switch (header->type) {
+    case VDAGENTD_CLIPBOARD_GRAB: {
+        VDAgentClipboardGrab grab = { .type = header->opaque };
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_CLIPBOARD_GRAB, 0,
+                                  (uint8_t *)&grab, sizeof(grab));
+        if (debug)
+            fprintf(stderr,
+                    "Agent: %p claimed clipboard owner ship type %u\n",
+                    conn, grab.type);
+        break;
+    }
+    case VDAGENTD_CLIPBOARD_REQUEST: {
+        VDAgentClipboardRequest req = { .type = header->opaque };
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_CLIPBOARD_REQUEST, 0,
+                                  (uint8_t *)&req, sizeof(req));
+        if (debug)
+            fprintf(stderr, "Agent: %p send a clipboard request type %u\n",
+                    conn, req.type);
+        break;
+    }
+    case VDAGENTD_CLIPBOARD_DATA: {
+        VDAgentClipboard *clipboard;
+        uint32_t size = sizeof(*clipboard) + header->size;
+
+        clipboard = calloc(1, size);
+        if (!clipboard) {
+            fprintf(stderr,
+                    "out of memory allocating clipboard (write)\n");
+            return;
+        }
+        clipboard->type = header->opaque;
+        memcpy(clipboard->data, data, header->size);
+
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_CLIPBOARD, 0,
+                                  (uint8_t *)clipboard, size);
+        if (debug)
+            fprintf(stderr, "Agent: %p send clipboard data type %u\n",
+                    conn, clipboard->type);
+        free(clipboard);
+        break;
+    }
+    case VDAGENTD_CLIPBOARD_RELEASE:
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
+        if (debug)
+            fprintf(stderr, "Agent: %p released clipboard owner ship\n",
+                    conn);
+        break;
+    }
+
+    return;
+
+error:
+    if (header->type == VDAGENTD_CLIPBOARD_REQUEST) {
+        /* Let the agent know no answer is coming */
+        struct udscs_message_header udscs_header;
+
+        udscs_header.type = VDAGENTD_CLIPBOARD_DATA;
+        udscs_header.opaque = VD_AGENT_CLIPBOARD_NONE;
+        udscs_header.size = 0;
+
+        udscs_write(conn, &udscs_header, NULL);
+    }
+}
 
 void client_connect(struct udscs_connection *conn)
 {
@@ -250,6 +377,12 @@ int client_read_complete(struct udscs_connection *conn,
         }
         break;
     }
+    case VDAGENTD_CLIPBOARD_GRAB:
+    case VDAGENTD_CLIPBOARD_REQUEST:
+    case VDAGENTD_CLIPBOARD_DATA:
+    case VDAGENTD_CLIPBOARD_RELEASE:
+        do_client_clipboard(conn, header, data);
+        break;
     default:
         fprintf(stderr, "unknown message from vdagent client: %u, ignoring\n",
                 header->type);

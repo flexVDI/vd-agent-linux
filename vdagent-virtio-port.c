@@ -135,25 +135,22 @@ void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **portp,
 
 int vdagent_virtio_port_write(
         struct vdagent_virtio_port *port,
-        VDIChunkHeader *chunk_header,
-        VDAgentMessage *message_header,
-        uint8_t *data)
+        uint32_t port_nr,
+        uint32_t message_type,
+        uint32_t message_opaque,
+        uint8_t *data,
+        uint32_t data_size)
 {
     struct vdagent_virtio_port_buf *wbuf, *new_wbuf;
-
-    if (message_header->size !=
-            (chunk_header->size - sizeof(*message_header))) {
-        fprintf(stderr, "write: chunk vs message header size mismatch\n");
-        return -1;
-    }
+    VDIChunkHeader chunk_header;
+    VDAgentMessage message_header;
 
     new_wbuf = malloc(sizeof(*new_wbuf));
     if (!new_wbuf)
         return -1;
 
     new_wbuf->pos = 0;
-    new_wbuf->size = sizeof(*chunk_header) + sizeof(*message_header) +
-                     message_header->size;
+    new_wbuf->size = sizeof(chunk_header) + sizeof(message_header) + data_size;
     new_wbuf->next = NULL;
     new_wbuf->buf = malloc(new_wbuf->size);
     if (!new_wbuf->buf) {
@@ -161,11 +158,18 @@ int vdagent_virtio_port_write(
         return -1;
     }
 
-    memcpy(new_wbuf->buf, chunk_header, sizeof(*chunk_header));
-    memcpy(new_wbuf->buf + sizeof(*chunk_header), message_header,
-           sizeof(*message_header));
-    memcpy(new_wbuf->buf + sizeof(*chunk_header) + sizeof(*message_header),
-           data, message_header->size);
+    chunk_header.port = port_nr;
+    chunk_header.size = sizeof(message_header) + data_size;
+    message_header.protocol = VD_AGENT_PROTOCOL;
+    message_header.type = message_type;
+    message_header.opaque = message_opaque;
+    message_header.size = data_size;
+
+    memcpy(new_wbuf->buf, &chunk_header, sizeof(chunk_header));
+    memcpy(new_wbuf->buf + sizeof(chunk_header), &message_header,
+           sizeof(message_header));
+    memcpy(new_wbuf->buf + sizeof(chunk_header) + sizeof(message_header),
+           data, data_size);
 
     if (!port->write_buf) {
         port->write_buf = new_wbuf;
