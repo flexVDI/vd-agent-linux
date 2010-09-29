@@ -33,6 +33,7 @@ enum {
     VDAGENTD_CLIPBOARD_REQUEST, /* opaque = type */
     VDAGENTD_CLIPBOARD_DATA,    /* opaque = type, data = data */
     VDAGENTD_CLIPBOARD_RELEASE, /* no data */
+    VDAGENTD_NO_MESSAGES /* Must always be last */
 };
 
 struct vdagentd_guest_xorg_resolution {

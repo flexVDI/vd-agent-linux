@@ -22,6 +22,7 @@
 #ifndef __UDSCS_H
 #define __UDSCS_H
 
+#include <stdio.h>
 #include <stdint.h>
 #include <sys/select.h>
 
@@ -31,7 +32,6 @@ struct udscs_message_header {
     uint32_t type;
     uint32_t opaque;
     uint32_t size;  
-    uint8_t data[0];
 };
 
 /* Callbacks with this type will be called when a new connection to a
@@ -57,14 +57,18 @@ typedef void (*udscs_disconnect_callback)(struct udscs_connection *conn);
 struct udscs_server *udscs_create_server(const char *socketname,
     udscs_connect_callback connect_callback,
     udscs_read_callback read_callback,
-    udscs_disconnect_callback disconnect_callback);
+    udscs_disconnect_callback disconnect_callback,
+    const char * const type_to_string[], int no_types,
+    FILE *logfile, FILE *errfile);
 
 void udscs_destroy_server(struct udscs_server *server);
 
 /* Connect to a unix domain socket named name. */
 struct udscs_connection *udscs_connect(const char *socketname,
     udscs_read_callback read_callback,
-    udscs_disconnect_callback disconnect_callback);
+    udscs_disconnect_callback disconnect_callback,
+    const char * const type_to_string[], int no_types,
+    FILE *logfile, FILE *errfile);
 
 /* The contents of connp will be made NULL */
 void udscs_destroy_connection(struct udscs_connection **connp);

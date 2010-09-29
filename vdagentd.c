@@ -31,6 +31,7 @@
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
+#include "vdagentd-proto-strings.h"
 #include "vdagentd-uinput.h"
 #include "vdagent-virtio-port.h"
 
@@ -138,18 +139,12 @@ static void do_clipboard(struct vdagent_virtio_port *port,
         VDAgentClipboardGrab *grab = (VDAgentClipboardGrab *)message_data;
         type = VDAGENTD_CLIPBOARD_GRAB;
         opaque = grab->type;
-        if (debug)
-            fprintf(stderr, "Client claimed clipboard owner ship type %u\n",
-                    grab->type);
         break;
     }
     case VD_AGENT_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
         type = VDAGENTD_CLIPBOARD_REQUEST;
         opaque = req->type;
-        if (debug)
-            fprintf(stderr, "Client send clipboard request type %u\n",
-                    req->type);
         break;
     }
     case VD_AGENT_CLIPBOARD: {
@@ -158,15 +153,10 @@ static void do_clipboard(struct vdagent_virtio_port *port,
         opaque = clipboard->type;
         size = message_header->size - sizeof(VDAgentClipboard);
         data = clipboard->data;
-        if (debug)
-            fprintf(stderr, "Client send clipboard data type %u\n",
-                    clipboard->type);
         break;
     }
     case VD_AGENT_CLIPBOARD_RELEASE:
         type = VDAGENTD_CLIPBOARD_RELEASE;
-        if (debug)
-            fprintf(stderr, "Client released clipboard\n");
         break;
     }
 
@@ -253,10 +243,6 @@ void do_client_clipboard(struct udscs_connection *conn,
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_GRAB, 0,
                                   (uint8_t *)&grab, sizeof(grab));
-        if (debug)
-            fprintf(stderr,
-                    "Agent: %p claimed clipboard owner ship type %u\n",
-                    conn, grab.type);
         break;
     }
     case VDAGENTD_CLIPBOARD_REQUEST: {
@@ -264,9 +250,6 @@ void do_client_clipboard(struct udscs_connection *conn,
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_REQUEST, 0,
                                   (uint8_t *)&req, sizeof(req));
-        if (debug)
-            fprintf(stderr, "Agent: %p send a clipboard request type %u\n",
-                    conn, req.type);
         break;
     }
     case VDAGENTD_CLIPBOARD_DATA: {
@@ -285,18 +268,12 @@ void do_client_clipboard(struct udscs_connection *conn,
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD, 0,
                                   (uint8_t *)clipboard, size);
-        if (debug)
-            fprintf(stderr, "Agent: %p send clipboard data type %u\n",
-                    conn, clipboard->type);
         free(clipboard);
         break;
     }
     case VDAGENTD_CLIPBOARD_RELEASE:
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
-        if (debug)
-            fprintf(stderr, "Agent: %p released clipboard owner ship\n",
-                    conn);
         break;
     }
 
@@ -460,10 +437,10 @@ int main(int argc, char *argv[])
     }
 
     /* Setup communication with vdagent process(es) */
-    server = udscs_create_server(VDAGENTD_SOCKET,
-                                 client_connect,
-                                 client_read_complete,
-                                 client_disconnect);
+    server = udscs_create_server(VDAGENTD_SOCKET, client_connect,
+                                 client_read_complete, client_disconnect,
+                                 vdagentd_messages, VDAGENTD_NO_MESSAGES,
+                                 debug? stderr:NULL, stderr);
     if (!server)
         exit(1);
 

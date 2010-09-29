@@ -59,7 +59,6 @@ struct vdagent_x11 {
 };
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
-static void vdagent_x11_send_daemon_clipboard_grab(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event);
 
@@ -165,7 +164,11 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
             return;
         }
 
-        vdagent_x11_send_daemon_clipboard_grab(x11);
+        /* FIXME plenty, we need to request the selection with a type of
+           TARGETS and then compare the TARGETS against our list of known
+           UTF-8 targets. */
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB,
+                    VD_AGENT_CLIPBOARD_UTF8_TEXT, NULL, 0);
         handled = 1;
     } else switch (event.type) {
     case ConfigureNotify:
@@ -209,27 +212,6 @@ static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
                 (uint8_t *)&res, sizeof(res));
 }
 
-static void vdagent_x11_send_daemon_clipboard_grab(struct vdagent_x11 *x11)
-{
-    /* FIXME plenty, we need to request the selection with a type of
-       TARGETS and then compare the TARGETS against our list of known
-       UTF-8 targets. */
-    uint32_t type = VD_AGENT_CLIPBOARD_UTF8_TEXT;
-
-    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, type, NULL, 0);
-    if (x11->verbose)
-        fprintf(stderr, "Claimed clipboard ownership, type: %u\n", type);
-}
-
-static void vdagent_x11_send_daemon_clipboard_data(struct vdagent_x11 *x11,
-    uint32_t type, uint8_t *data, uint32_t size)
-{
-    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, type, data, size);
-    if (x11->verbose)
-        fprintf(stderr, "Send clipboard data, type: %u, size: %u\n",
-                type, size);
-}
-
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event)
 {
@@ -270,8 +252,8 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     }
 
     /* FIXME don't hardcode VD_AGENT_CLIPBOARD_UTF8_TEXT */
-    vdagent_x11_send_daemon_clipboard_data(x11, VD_AGENT_CLIPBOARD_UTF8_TEXT,
-                                           data, len);
+    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                VD_AGENT_CLIPBOARD_UTF8_TEXT, data, len);
     XFree(data);
     return;
 
@@ -279,8 +261,8 @@ error:
     if (data)
         XFree(data);
     /* Notify the spice client that no answer is forthcoming */
-    vdagent_x11_send_daemon_clipboard_data(x11, VD_AGENT_CLIPBOARD_NONE,
-                                           NULL, 0);
+    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                VD_AGENT_CLIPBOARD_NONE, NULL, 0);
 }
 
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
@@ -348,7 +330,4 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
     XConvertSelection(x11->display, x11->clipboard_atom, target,
                       x11->clipboard_atom, x11->selection_window, CurrentTime);
     XFlush(x11->display);
-    if (x11->verbose)
-        fprintf(stderr, "Requested selection, target: %s\n",
-                XGetAtomName(x11->display, target));
 }

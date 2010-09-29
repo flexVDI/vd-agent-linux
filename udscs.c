@@ -40,6 +40,10 @@ struct udscs_buf {
 
 struct udscs_connection {
     int fd;
+    const char * const *type_to_string;
+    int no_types;
+    FILE *logfile;
+    FILE *errfile;
 
     /* Read stuff, single buffer, separate header and data buffer */
     int header_read;
@@ -60,6 +64,10 @@ struct udscs_connection {
 
 struct udscs_server {
     int fd;
+    const char * const *type_to_string;
+    int no_types;
+    FILE *logfile;
+    FILE *errfile;
     struct udscs_connection connections_head;
     udscs_connect_callback connect_callback;
     udscs_read_callback read_callback;
@@ -73,7 +81,9 @@ static void udscs_do_read(struct udscs_connection **connp);
 struct udscs_server *udscs_create_server(const char *socketname,
     udscs_connect_callback connect_callback,
     udscs_read_callback read_callback,
-    udscs_disconnect_callback disconnect_callback)
+    udscs_disconnect_callback disconnect_callback,
+    const char * const type_to_string[], int no_types,
+    FILE *logfile, FILE *errfile)
 {
     int c;
     struct sockaddr_un address;
@@ -83,16 +93,23 @@ struct udscs_server *udscs_create_server(const char *socketname,
     if (!server)
         return NULL;
 
+    server->logfile = logfile;
+    server->errfile = errfile;
+    server->type_to_string = type_to_string;
+    server->no_types = no_types;
+
     server->fd = socket(PF_UNIX, SOCK_STREAM, 0);
     if (server->fd == -1) {
-        perror("creating unix domain socket");
+        fprintf(server->errfile, "creating unix domain socket: %s\n",
+                strerror(errno));
         free(server);
         return NULL;
     }
 
     c = unlink(socketname);
     if (c != 0 && errno != ENOENT) {
-        fprintf(stderr, "unlink %s: %s\n", socketname, strerror(errno));
+        fprintf(server->errfile, "unlink %s: %s\n", socketname,
+                strerror(errno));
         free(server);
         return NULL;
     }
@@ -101,14 +118,14 @@ struct udscs_server *udscs_create_server(const char *socketname,
     snprintf(address.sun_path, sizeof(address.sun_path), "%s", socketname);
     c = bind(server->fd, (struct sockaddr *)&address, sizeof(address));
     if (c != 0) {
-        fprintf(stderr, "bind %s: %s\n", socketname, strerror(errno));
+        fprintf(server->errfile, "bind %s: %s\n", socketname, strerror(errno));
         free(server);
         return NULL;
     }
 
     c = listen(server->fd, 5);
     if (c != 0) {
-        perror("listen");
+        fprintf(server->errfile, "listen: %s\n", strerror(errno));
         free(server);
         return NULL;
     }
@@ -139,7 +156,9 @@ void udscs_destroy_server(struct udscs_server *server)
 
 struct udscs_connection *udscs_connect(const char *socketname,
     udscs_read_callback read_callback,
-    udscs_disconnect_callback disconnect_callback)
+    udscs_disconnect_callback disconnect_callback,
+    const char * const type_to_string[], int no_types,
+    FILE *logfile, FILE *errfile)
 {
     int c;
     struct sockaddr_un address;
@@ -149,9 +168,15 @@ struct udscs_connection *udscs_connect(const char *socketname,
     if (!conn)
         return NULL;
 
+    conn->logfile = logfile;
+    conn->errfile = errfile;
+    conn->type_to_string = type_to_string;
+    conn->no_types = no_types;
+
     conn->fd = socket(PF_UNIX, SOCK_STREAM, 0);
     if (conn->fd == -1) {
-        perror("creating unix domain socket");
+        fprintf(conn->errfile, "creating unix domain socket: %s\n",
+                strerror(errno));
         free(conn);
         return NULL;
     }
@@ -160,13 +185,17 @@ struct udscs_connection *udscs_connect(const char *socketname,
     snprintf(address.sun_path, sizeof(address.sun_path), "%s", socketname);
     c = connect(conn->fd, (struct sockaddr *)&address, sizeof(address));
     if (c != 0) {
-        fprintf(stderr, "connect %s: %s\n", socketname, strerror(errno));
+        fprintf(conn->errfile, "connect %s: %s\n", socketname,
+                strerror(errno));
         free(conn);
         return NULL;
     }
 
     conn->read_callback = read_callback;
     conn->disconnect_callback = disconnect_callback;
+
+    if (conn->logfile)
+        fprintf(conn->logfile, "%p connected to %s\n", conn, socketname);
 
     return conn;
 }
@@ -196,6 +225,10 @@ void udscs_destroy_connection(struct udscs_connection **connp)
         conn->prev->next = conn->next;
 
     close(conn->fd);
+
+    if (conn->logfile)
+        fprintf(conn->logfile, "%p disconnected\n", conn);
+
     free(conn);
     *connp = NULL;
 }
@@ -246,18 +279,22 @@ static void udscs_server_accept(struct udscs_server *server) {
     if (fd == -1) {
         if (errno == EINTR)
             return;
-        perror("accept");
+        fprintf(server->errfile, "accept: %s\n", strerror(errno));
         return;
     }
 
     new_conn = calloc(1, sizeof(*conn));
     if (!new_conn) {
-        fprintf(stderr, "out of memory, disconnecting client\n");
+        fprintf(server->errfile, "out of memory, disconnecting new client\n");
         close(fd);
         return;
     }
 
     new_conn->fd = fd;
+    new_conn->logfile = server->logfile;
+    new_conn->errfile = server->errfile;
+    new_conn->type_to_string = server->type_to_string;
+    new_conn->no_types = server->no_types;
     new_conn->read_callback = server->read_callback;
     new_conn->disconnect_callback = server->disconnect_callback;
 
@@ -267,6 +304,9 @@ static void udscs_server_accept(struct udscs_server *server) {
 
     new_conn->prev = conn;
     conn->next = new_conn;
+
+    if (server->logfile)
+        fprintf(server->logfile, "new client accepted: %p\n", new_conn);
 
     if (server->connect_callback)
         server->connect_callback(new_conn);
@@ -332,6 +372,16 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
     memcpy(new_wbuf->buf, &header, sizeof(header));
     memcpy(new_wbuf->buf + sizeof(header), data, size);
 
+    if (conn->logfile) {
+        if (type < conn->no_types)
+            fprintf(conn->logfile, "%p sent %s, opaque: %u, size %u\n",
+                    conn, conn->type_to_string[type], opaque, size);
+        else
+            fprintf(conn->logfile,
+                    "%p sent invalid message %u, opaque: %u, size %u\n",
+                    conn, type, opaque, size);
+    }
+
     if (!conn->write_buf) {
         conn->write_buf = new_wbuf;
         return 0;
@@ -363,12 +413,39 @@ int udscs_server_write_all(struct udscs_server *server,
     return 0;
 }
 
+static void udscs_read_complete(struct udscs_connection **connp)
+{
+    struct udscs_connection *conn = *connp;
+
+    if (conn->logfile) {
+        if (conn->header.type < conn->no_types)
+            fprintf(conn->logfile, "%p received %s, opaque: %u, size %u\n",
+                    conn, conn->type_to_string[conn->header.type],
+                    conn->header.opaque, conn->header.size);
+        else
+            fprintf(conn->logfile,
+                    "%p received invalid message %u, opaque: %u, size %u\n",
+                    conn, conn->header.type, conn->header.opaque,
+                    conn->header.size);
+    }
+
+    if (conn->read_callback) {
+        if (conn->read_callback(conn, &conn->header, conn->data.buf) == -1) {
+            udscs_destroy_connection(connp);
+            return;
+        }
+    }
+
+    free(conn->data.buf);
+    conn->header_read = 0;
+    memset(&conn->data, 0, sizeof(conn->data));
+}
+
 static void udscs_do_read(struct udscs_connection **connp)
 {
     ssize_t n;
     size_t to_read;
     uint8_t *dest;
-    int r;
     struct udscs_connection *conn = *connp;
 
     if (conn->header_read < sizeof(conn->header)) {
@@ -383,7 +460,9 @@ static void udscs_do_read(struct udscs_connection **connp)
     if (n < 0) {
         if (errno == EINTR)
             return;
-        perror("reading from unix domain socket");
+        fprintf(conn->errfile,
+                "reading unix domain socket: %s, disconnecting %p\n",
+                strerror(errno), conn);
     }
     if (n <= 0) {
         udscs_destroy_connection(connp);
@@ -394,39 +473,23 @@ static void udscs_do_read(struct udscs_connection **connp)
         conn->header_read += n;
         if (conn->header_read == sizeof(conn->header)) {
             if (conn->header.size == 0) {
-                if (conn->read_callback) {
-                    r = conn->read_callback(conn, &conn->header, NULL);
-                    if (r == -1) {
-                        udscs_destroy_connection(connp);
-                        return;
-                    }
-                }
-                conn->header_read = 0;
-            } else {
-                conn->data.pos = 0;
-                conn->data.size = conn->header.size;
-                conn->data.buf = malloc(conn->data.size);
-                if (!conn->data.buf) {
-                    fprintf(stderr, "out of memory, disconnecting client\n");
-                    udscs_destroy_connection(connp);
-                    return;
-                }
+                udscs_read_complete(connp);
+                return;
+            }
+            conn->data.pos = 0;
+            conn->data.size = conn->header.size;
+            conn->data.buf = malloc(conn->data.size);
+            if (!conn->data.buf) {
+                fprintf(conn->errfile, "out of memory, disconnecting %p\n",
+                        conn);
+                udscs_destroy_connection(connp);
+                return;
             }
         }
     } else {
         conn->data.pos += n;
-        if (conn->data.pos == conn->data.size) {
-            if (conn->read_callback) {
-                r = conn->read_callback(conn, &conn->header, conn->data.buf);
-                if (r == -1) {
-                    udscs_destroy_connection(connp);
-                    return;
-                }
-            }
-            free(conn->data.buf);
-            conn->header_read = 0;
-            memset(&conn->data, 0, sizeof(conn->data));
-        }
+        if (conn->data.pos == conn->data.size)
+            udscs_read_complete(connp);
     }
 }
 
@@ -438,8 +501,9 @@ static void udscs_do_write(struct udscs_connection **connp)
 
     struct udscs_buf* wbuf = conn->write_buf;
     if (!wbuf) {
-        fprintf(stderr,
-                "do_write called on a connection without a write buf ?!\n");
+        fprintf(conn->errfile,
+                "%p do_write called on a connection without a write buf ?!\n",
+                conn);
         return;
     }
 
@@ -448,7 +512,9 @@ static void udscs_do_write(struct udscs_connection **connp)
     if (n < 0) {
         if (errno == EINTR)
             return;
-        perror("writing to unix domain socket");
+        fprintf(conn->errfile,
+                "writing to unix domain socket: %s, disconnecting %p\n",
+                strerror(errno), conn);
         udscs_destroy_connection(connp);
         return;
     }

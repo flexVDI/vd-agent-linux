@@ -29,6 +29,7 @@
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
+#include "vdagentd-proto-strings.h"
 #include "vdagent-x11.h"
 
 static int verbose = 0;
@@ -83,7 +84,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL);
+    client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
+                           vdagentd_messages, VDAGENTD_NO_MESSAGES,
+                           verbose? stderr:NULL, stderr);
     if (!client)
         exit(1);
 
