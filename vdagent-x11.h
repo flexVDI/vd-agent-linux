@@ -36,5 +36,6 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11);
 
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                                     VDAgentMonitorsConfig *mon_config);
+void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type);
 
 #endif

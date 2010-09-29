@@ -26,31 +26,49 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xfixes.h>
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
 
+const char *utf8_atom_names[] = {
+    "UTF8_STRING",
+    "text/plain;charset=UTF-8",
+    "text/plain;charset=utf-8",
+};
+
 struct vdagent_x11 {
     Display *display;
+    Atom clipboard_atom;
+    Atom targets_atom;
+    Atom incr_atom;
+    Atom utf8_atoms[sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0])];
+    Window root_window;
+    Window selection_window;
     struct udscs_connection *vdagentd;
     int verbose;
     int fd;
     int screen;
-    int root_window;
     int width;
     int height;
     int has_xrandr;
+    int has_xfixes;
+    int xfixes_event_base;
 };
 
-static void vdagent_x11_send_guest_xorg_res(struct vdagent_x11 *x11);
+static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
+static void vdagent_x11_send_daemon_clipboard_grab(struct vdagent_x11 *x11);
+static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
+                                                XEvent *event);
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int verbose)
 {
     struct vdagent_x11 *x11;
     XWindowAttributes attrib;
-    int xrandr_event_base, xrandr_error_base;
+    int i, major, minor;
 
     x11 = calloc(1, sizeof(*x11));
     if (!x11) {
@@ -71,19 +89,41 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->screen = DefaultScreen(x11->display);
     x11->root_window = RootWindow(x11->display, x11->screen);
     x11->fd = ConnectionNumber(x11->display);
+    x11->clipboard_atom = XInternAtom(x11->display, "CLIPBOARD", False);
+    x11->targets_atom = XInternAtom(x11->display, "TARGETS", False);
+    x11->incr_atom = XInternAtom(x11->display, "INCR", False);
+    for(i = 0; i < sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0]); i++)
+        x11->utf8_atoms[i] = XInternAtom(x11->display, utf8_atom_names[i],
+                                         False);
 
-    if (XRRQueryExtension(x11->display, &xrandr_event_base, &xrandr_error_base))
+    /* We should not store properties (for selections) on the root window */
+    x11->selection_window = XCreateSimpleWindow(x11->display, x11->root_window,
+                                                0, 0, 1, 1, 0, 0, 0);
+
+    if (XRRQueryExtension(x11->display, &i, &i))
         x11->has_xrandr = 1;
     else
         fprintf(stderr, "no xrandr\n");
 
-    XSelectInput(x11->display, x11->root_window, StructureNotifyMask);
-    XGetWindowAttributes(x11->display, x11->root_window, &attrib);
+    if (XFixesQueryExtension(x11->display, &x11->xfixes_event_base, &i) &&
+        XFixesQueryVersion(x11->display, &major, &minor) && major >= 1) {
+        x11->has_xfixes = 1;
+        XFixesSelectSelectionInput(x11->display, x11->root_window,
+                                   x11->clipboard_atom,
+                                   XFixesSetSelectionOwnerNotifyMask);
+    } else
+        fprintf(stderr, "no xfixes, no guest -> client copy paste support\n");
 
+    /* Catch resolution changes */
+    XSelectInput(x11->display, x11->root_window, StructureNotifyMask);
+
+    /* Get the current resolution */
+    XGetWindowAttributes(x11->display, x11->root_window, &attrib);
     x11->width = attrib.width;
     x11->height = attrib.height;
+    vdagent_x11_send_daemon_guest_xorg_res(x11);
 
-    vdagent_x11_send_guest_xorg_res(x11);
+    /* No need for XFlush as XGetWindowAttributes does an implicit Xflush */
 
     return x11;
 }
@@ -111,7 +151,23 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
         return;
 
     XNextEvent(x11->display, &event);
-    switch (event.type) {
+    if (event.type == x11->xfixes_event_base) {
+        union {
+            XEvent ev;
+            XFixesSelectionNotifyEvent xfev;
+        } ev;
+
+        ev.ev = event;
+        if (ev.xfev.subtype != XFixesSetSelectionOwnerNotify) {
+            if (x11->verbose)
+                fprintf(stderr, "unexpected xfix event subtype %d window %d\n",
+                        (int)ev.xfev.subtype, (int)event.xany.window);
+            return;
+        }
+
+        vdagent_x11_send_daemon_clipboard_grab(x11);
+        handled = 1;
+    } else switch (event.type) {
     case ConfigureNotify:
         if (event.xconfigure.window != x11->root_window)
             break;
@@ -125,7 +181,16 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
         x11->width  = event.xconfigure.width;
         x11->height = event.xconfigure.height;
 
-        vdagent_x11_send_guest_xorg_res(x11);
+        vdagent_x11_send_daemon_guest_xorg_res(x11);
+        break;
+    case SelectionNotify:
+        handled = 1;
+
+        if (event.xselection.target == x11->targets_atom) {
+            /* FIXME */
+        } else {
+            vdagent_x11_handle_selection_notify(x11, &event);
+        }
         break;
     }
     if (!handled && x11->verbose)
@@ -133,7 +198,7 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
                 (int)event.type, (int)event.xany.window);
 }
 
-static void vdagent_x11_send_guest_xorg_res(struct vdagent_x11 *x11)
+static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
 {
     struct vdagentd_guest_xorg_resolution res;
     struct udscs_message_header header;
@@ -146,6 +211,91 @@ static void vdagent_x11_send_guest_xorg_res(struct vdagent_x11 *x11)
     res.height = x11->height;
 
     udscs_write(x11->vdagentd, &header, (uint8_t *)&res);
+}
+
+static void vdagent_x11_send_daemon_clipboard_grab(struct vdagent_x11 *x11)
+{
+    struct udscs_message_header header;
+
+    header.type = VDAGENTD_CLIPBOARD_GRAB;
+    /* FIXME plenty, we need to request the selection with a type of
+       TARGETS and then compare the TARGETS against our list of known
+       UTF-8 targets. */
+    header.opaque = VD_AGENT_CLIPBOARD_UTF8_TEXT;
+    header.size = 0;
+
+    udscs_write(x11->vdagentd, &header, NULL);
+    if (x11->verbose)
+        fprintf(stderr, "Claimed clipboard ownership, type: %u\n",
+                header.opaque);
+}
+
+static void vdagent_x11_send_daemon_clipboard_data(struct vdagent_x11 *x11,
+    uint32_t type, uint8_t *data, uint32_t size)
+{
+    struct udscs_message_header header;
+
+    header.type = VDAGENTD_CLIPBOARD_DATA;
+    header.opaque = type;
+    header.size = size;
+
+    udscs_write(x11->vdagentd, &header, data);
+    if (x11->verbose)
+        fprintf(stderr, "Send clipboard data, type: %u, size: %u\n",
+                header.opaque, header.size);
+}
+
+static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
+                                                XEvent *event)
+{
+    Atom type;
+    int format;
+    unsigned long len, remain;
+    unsigned char *data = NULL;
+
+    if (XGetWindowProperty(x11->display, x11->selection_window,
+                           x11->clipboard_atom, 0, LONG_MAX, True,
+                           event->xselection.target, &type, &format, &len,
+                           &remain, &data) != Success) {
+        fprintf(stderr, "XGetWindowProperty(size) failed\n");
+        goto error;
+    }
+
+    if (type == x11->incr_atom) {
+        /* FIXME */
+        fprintf(stderr, "incr properties are currently unsupported\n");
+        goto error;
+    }
+
+    if (type != event->xselection.target) {
+        fprintf(stderr, "expected property type: %s, got: %s\n",
+                XGetAtomName(x11->display, event->xselection.target),
+                XGetAtomName(x11->display, type));
+        goto error;
+    }
+
+    if (format != 8) {
+        fprintf(stderr, "only 8 bit formats are supported\n");
+        goto error;
+    }
+
+    if (len == 0) {
+        fprintf(stderr, "property contains no data (zero length)\n");
+        goto error;
+    }
+
+    /* FIXME don't hardcode VD_AGENT_CLIPBOARD_UTF8_TEXT */
+    vdagent_x11_send_daemon_clipboard_data(x11, VD_AGENT_CLIPBOARD_UTF8_TEXT,
+                                           data, len);
+    XFree(data);
+    return;
+
+error:
+    if (data)
+        XFree(data);
+    /* Notify the spice client that no answer is forthcoming */
+    vdagent_x11_send_daemon_clipboard_data(x11, VD_AGENT_CLIPBOARD_NONE,
+                                           NULL, 0);
 }
 
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
@@ -202,4 +352,18 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                        rotation, CurrentTime);
     XRRFreeScreenConfigInfo(config);
     XFlush(x11->display);
+}
+
+void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
+{
+    /* FIXME use atom which we figured out matches one of our supported
+       types when we first got notified of a selection owner change */
+    Atom target = x11->utf8_atoms[0];
+
+    XConvertSelection(x11->display, x11->clipboard_atom, target,
+                      x11->clipboard_atom, x11->selection_window, CurrentTime);
+    XFlush(x11->display);
+    if (x11->verbose)
+        fprintf(stderr, "Requested selection, target: %s\n",
+                XGetAtomName(x11->display, target));
 }
