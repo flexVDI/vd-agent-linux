@@ -306,17 +306,18 @@ void udscs_client_handle_fds(struct udscs_connection **connp, fd_set *readfds,
         udscs_do_write(connp);
 }
 
-int udscs_write(struct udscs_connection *conn,
-        struct udscs_message_header *header, const uint8_t *data)
+int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
+        const uint8_t *data, uint32_t size)
 {
     struct udscs_buf *wbuf, *new_wbuf;
+    struct udscs_message_header header;
 
     new_wbuf = malloc(sizeof(*new_wbuf));
     if (!new_wbuf)
         return -1;
 
     new_wbuf->pos = 0;
-    new_wbuf->size = sizeof(*header) + header->size;
+    new_wbuf->size = sizeof(header) + size;
     new_wbuf->next = NULL;
     new_wbuf->buf = malloc(new_wbuf->size);
     if (!new_wbuf->buf) {
@@ -324,8 +325,12 @@ int udscs_write(struct udscs_connection *conn,
         return -1;
     }
 
-    memcpy(new_wbuf->buf, header, sizeof(*header));
-    memcpy(new_wbuf->buf + sizeof(*header), data, header->size);
+    header.type = type;
+    header.opaque = opaque;
+    header.size = size;
+
+    memcpy(new_wbuf->buf, &header, sizeof(header));
+    memcpy(new_wbuf->buf + sizeof(header), data, size);
 
     if (!conn->write_buf) {
         conn->write_buf = new_wbuf;
@@ -343,13 +348,14 @@ int udscs_write(struct udscs_connection *conn,
 }
 
 int udscs_server_write_all(struct udscs_server *server,
-        struct udscs_message_header *header, const uint8_t *data)
+        uint32_t type, uint32_t opaque,
+        const uint8_t *data, uint32_t size)
 {
     struct udscs_connection *conn;
 
     conn = server->connections_head.next;
     while (conn) {
-        if (udscs_write(conn, header, data))
+        if (udscs_write(conn, type, opaque, data, size))
             return -1;
         conn = conn->next;
     }

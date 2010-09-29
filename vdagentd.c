@@ -76,7 +76,6 @@ static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
     VDAgentMessage *message_header, VDAgentMonitorsConfig *new_monitors)
 {
     VDAgentReply reply;
-    struct udscs_message_header udscs_header;
     uint32_t size;
 
     /* Store monitor config to send to agents when they connect */
@@ -99,10 +98,8 @@ static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
     memcpy(mon_config, new_monitors, size);
 
     /* Send monitor config to currently connected agents */
-    udscs_header.type = VDAGENTD_MONITORS_CONFIG;
-    udscs_header.opaque = 0;
-    udscs_header.size = size;
-    udscs_server_write_all(server, &udscs_header, (uint8_t *)mon_config);
+    udscs_server_write_all(server, VDAGENTD_MONITORS_CONFIG, 0,
+                           (uint8_t *)mon_config, size);
 
     /* Acknowledge reception of monitors config to spice server / client */
     reply.type  = VD_AGENT_MONITORS_CONFIG;
@@ -133,15 +130,14 @@ static void do_capabilities(struct vdagent_virtio_port *port,
 static void do_clipboard(struct vdagent_virtio_port *port,
     VDAgentMessage *message_header, uint8_t *message_data)
 {
-    struct udscs_message_header udscs_header;
-    uint8_t *udscs_data = NULL;
+    uint32_t type = 0, opaque = 0, size = 0;
+    uint8_t *data = NULL;
 
     switch (message_header->type) {
     case VD_AGENT_CLIPBOARD_GRAB: {
         VDAgentClipboardGrab *grab = (VDAgentClipboardGrab *)message_data;
-        udscs_header.type = VDAGENTD_CLIPBOARD_GRAB;
-        udscs_header.opaque = grab->type;
-        udscs_header.size = 0;
+        type = VDAGENTD_CLIPBOARD_GRAB;
+        opaque = grab->type;
         if (debug)
             fprintf(stderr, "Client claimed clipboard owner ship type %u\n",
                     grab->type);
@@ -149,9 +145,8 @@ static void do_clipboard(struct vdagent_virtio_port *port,
     }
     case VD_AGENT_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
-        udscs_header.type = VDAGENTD_CLIPBOARD_REQUEST;
-        udscs_header.opaque = req->type;
-        udscs_header.size = 0;
+        type = VDAGENTD_CLIPBOARD_REQUEST;
+        opaque = req->type;
         if (debug)
             fprintf(stderr, "Client send clipboard request type %u\n",
                     req->type);
@@ -159,26 +154,24 @@ static void do_clipboard(struct vdagent_virtio_port *port,
     }
     case VD_AGENT_CLIPBOARD: {
         VDAgentClipboard *clipboard = (VDAgentClipboard *)message_data;
-        udscs_header.type = VDAGENTD_CLIPBOARD_DATA;
-        udscs_header.opaque = clipboard->type;
-        udscs_header.size = message_header->size - sizeof(VDAgentClipboard);
-        udscs_data = clipboard->data;
+        type = VDAGENTD_CLIPBOARD_DATA;
+        opaque = clipboard->type;
+        size = message_header->size - sizeof(VDAgentClipboard);
+        data = clipboard->data;
         if (debug)
             fprintf(stderr, "Client send clipboard data type %u\n",
                     clipboard->type);
         break;
     }
     case VD_AGENT_CLIPBOARD_RELEASE:
-        udscs_header.type = VDAGENTD_CLIPBOARD_RELEASE;
-        udscs_header.opaque = 0;
-        udscs_header.size = 0;
+        type = VDAGENTD_CLIPBOARD_RELEASE;
         if (debug)
             fprintf(stderr, "Client released clipboard\n");
         break;
     }
 
     /* FIXME send only to agent in active session */
-    udscs_server_write_all(server, &udscs_header, udscs_data);
+    udscs_server_write_all(server, type, opaque, data, size);
 }
 
 int virtio_port_read_complete(
@@ -312,31 +305,21 @@ void do_client_clipboard(struct udscs_connection *conn,
 error:
     if (header->type == VDAGENTD_CLIPBOARD_REQUEST) {
         /* Let the agent know no answer is coming */
-        struct udscs_message_header udscs_header;
-
-        udscs_header.type = VDAGENTD_CLIPBOARD_DATA;
-        udscs_header.opaque = VD_AGENT_CLIPBOARD_NONE;
-        udscs_header.size = 0;
-
-        udscs_write(conn, &udscs_header, NULL);
+        udscs_write(conn, VDAGENTD_CLIPBOARD_DATA,
+                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
     }
 }
 
 void client_connect(struct udscs_connection *conn)
 {
-    struct udscs_message_header udscs_header;
-
     /* We don't create the tablet until we've gotten the xorg resolution
        from the vdagent client */
     connection_count++;
 
-    if (mon_config) {
-        udscs_header.type = VDAGENTD_MONITORS_CONFIG;
-        udscs_header.opaque = 0;
-        udscs_header.size = sizeof(VDAgentMonitorsConfig) +
-                        mon_config->num_of_monitors * sizeof(VDAgentMonConfig);
-        udscs_write(conn, &udscs_header, (uint8_t *)mon_config);
-    }
+    if (mon_config)
+        udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, (uint8_t *)mon_config,
+                    sizeof(VDAgentMonitorsConfig) +
+                    mon_config->num_of_monitors * sizeof(VDAgentMonConfig));
 }
 
 void client_disconnect(struct udscs_connection *conn)
