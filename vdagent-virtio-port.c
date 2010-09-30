@@ -181,7 +181,7 @@ int vdagent_virtio_port_write(
     while (wbuf->next)
         wbuf = wbuf->next;
 
-    wbuf->next = wbuf;
+    wbuf->next = new_wbuf;
 
     return 0;
 }

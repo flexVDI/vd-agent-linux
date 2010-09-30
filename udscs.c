@@ -392,7 +392,7 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
     while (wbuf->next)
         wbuf = wbuf->next;
 
-    wbuf->next = wbuf;
+    wbuf->next = new_wbuf;
 
     return 0;
 }
