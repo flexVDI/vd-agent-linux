@@ -44,11 +44,17 @@ const char *utf8_atom_names[] = {
 
 #define utf8_atom_count (sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0]))
 
+struct vdagent_x11_selection_request {
+    XEvent event;
+    struct vdagent_x11_selection_request *next;
+};
+
 struct vdagent_x11 {
     Display *display;
     Atom clipboard_atom;
     Atom targets_atom;
     Atom incr_atom;
+    Atom multiple_atom;
     Atom utf8_atoms[utf8_atom_count];
     Window root_window;
     Window selection_window;
@@ -66,15 +72,16 @@ struct vdagent_x11 {
     /* Warning the size of these needs to be increased each time we add
        support for a new type!! */
     uint32_t clipboard_agent_types[1];
-    Atom clipboard_x11_types[1];
+    Atom clipboard_x11_targets[1];
+    struct vdagent_x11_selection_request *selection_request;
 };
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event);
+static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event);
-static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event);
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int verbose)
@@ -105,6 +112,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->clipboard_atom = XInternAtom(x11->display, "CLIPBOARD", False);
     x11->targets_atom = XInternAtom(x11->display, "TARGETS", False);
     x11->incr_atom = XInternAtom(x11->display, "INCR", False);
+    x11->multiple_atom = XInternAtom(x11->display, "MULTIPLE", False);
     for(i = 0; i < utf8_atom_count; i++)
         x11->utf8_atoms[i] = XInternAtom(x11->display, utf8_atom_names[i],
                                          False);
@@ -172,13 +180,10 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     x11->clipboard_owner = new_owner;
 }
 
-void vdagent_x11_do_read(struct vdagent_x11 *x11)
+static void vdagent_x11_handle_event(struct vdagent_x11 *x11)
 {
     XEvent event;
     int handled = 0;
-
-    if (!XPending(x11->display))
-        return;
 
     XNextEvent(x11->display, &event);
 
@@ -247,27 +252,44 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
            the XFixesSetSelectionOwnerNotify event */
         handled = 1;
         break;
-    case SelectionRequest:
-        handled = 1;
+    case SelectionRequest: {
+        struct vdagent_x11_selection_request *req, *new_req;
 
-        if (x11->clipboard_owner != owner_client) {
-            fprintf(stderr,
-                    "received selection event for target %s, "
-                    "while not owning client clipboard\n",
-                    XGetAtomName(x11->display, event.xselection.target));
+        new_req = malloc(sizeof(*new_req));
+        if (!new_req) {
+            fprintf(stderr, "out of memory on SelectionRequest, ignoring.\n");
             break;
         }
 
-        if (event.xselection.target == x11->targets_atom)
-            vdagent_x11_send_targets(x11, &event);
-        else
-            printf("FIXME\n");
+        handled = 1;
 
+        new_req->event = event;
+        new_req->next = NULL;
+
+        if (!x11->selection_request) {
+            x11->selection_request = new_req;
+            vdagent_x11_handle_selection_request(x11);
+            break;
+        }
+
+        /* FIXME maybe limit the selection_request stack depth ? */
+        req = x11->selection_request;
+        while (req->next)
+            req = req->next;
+
+        req->next = new_req;
         break;
+    }
     }
     if (!handled && x11->verbose)
         fprintf(stderr, "unhandled x11 event, type %d, window %d\n",
                 (int)event.type, (int)event.xany.window);
+}
+
+void vdagent_x11_do_read(struct vdagent_x11 *x11)
+{
+    while(XPending(x11->display))
+         vdagent_x11_handle_event(x11);
 }
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
@@ -279,6 +301,14 @@ static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
 
     udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, 0,
                 (uint8_t *)&res, sizeof(res));
+}
+
+static const char *vdagent_x11_get_atom_name(struct vdagent_x11 *x11, Atom a)
+{
+    if (a == None)
+        return "None";
+
+    return XGetAtomName(x11->display, a);
 }
 
 static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
@@ -320,8 +350,8 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
 
     if (type_ret != type) {
         fprintf(stderr, "expected property type: %s, got: %s\n",
-                XGetAtomName(x11->display, type),
-                XGetAtomName(x11->display, type_ret));
+                vdagent_x11_get_atom_name(x11, type),
+                vdagent_x11_get_atom_name(x11, type_ret));
         return -1;
     }
 
@@ -339,38 +369,61 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
     return len;
 }
 
+static uint32_t vdagent_x11_target_to_type(struct vdagent_x11 *x11,
+                                           Atom target)
+{
+    int i;
+
+    for (i = 0; i < utf8_atom_count; i++)
+        if (x11->utf8_atoms[i] == target)
+            return VD_AGENT_CLIPBOARD_UTF8_TEXT;
+
+    /* TODO Add support for more types here */
+    
+    fprintf(stderr, "unexpected selection type %s\n",
+            vdagent_x11_get_atom_name(x11, target));
+    return VD_AGENT_CLIPBOARD_NONE;
+}
+
+static Atom vdagent_x11_type_to_target(struct vdagent_x11 *x11, uint32_t type)
+{
+    int i;
+
+    for (i = 0; i < x11->clipboard_type_count; i++)
+        if (x11->clipboard_agent_types[i] == type)
+            return x11->clipboard_x11_targets[i];
+
+    fprintf(stderr, "client requested unavailable type %u\n", type);
+    return None;
+}
+
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event)
 {
     int i, len;
     unsigned char *data = NULL;
+    uint32_t type;
 
-    for (i = 0; i < x11->clipboard_type_count; i++)
-        if (x11->clipboard_x11_types[i] == event->xselection.target)
-            break;
-
-    if (i == x11->clipboard_type_count) {
-        fprintf(stderr, "unexpected selection type %s\n",
-                XGetAtomName(x11->display, event->xselection.target));
-        goto error;
+    type = vdagent_x11_target_to_type(x11, event->xselection.target);
+    if (type == VD_AGENT_CLIPBOARD_NONE) {
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+        return;
     }
 
     len = vdagent_x11_get_selection(x11, event, event->xselection.target, 8,
                                     &data);
-    if (len == -1)
-        goto error;
+    if (len == -1) {
+        if (data)
+            XFree(data);
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+        return;
+    }
 
     udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, 
                 x11->clipboard_agent_types[i], data, len);
     XFree(data);
-    return;
-
-error:
-    if (data)
-        XFree(data);
-    /* Notify the spice client that no answer is forthcoming */
-    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                VD_AGENT_CLIPBOARD_NONE, NULL, 0);
 }
 
 static Atom atom_lists_overlap(Atom *atoms1, Atom *atoms2, int l1, int l2)
@@ -385,10 +438,23 @@ static Atom atom_lists_overlap(Atom *atoms1, Atom *atoms2, int l1, int l2)
     return 0;
 }
 
+static void vdagent_x11_print_targets(struct vdagent_x11 *x11,
+                                      const char *action, Atom *atoms, int c)
+{
+    int i;
+
+    if (!x11->verbose)
+        return;
+
+    fprintf(stderr, "%s %d targets:\n", action, c);
+    for (i = 0; i < c; i++)
+        fprintf(stderr, "%s\n", vdagent_x11_get_atom_name(x11, atoms[i]));
+}
+
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event)
 {
-    int i, len;
+    int len;
     Atom atom, *atoms = NULL;
 
     len = vdagent_x11_get_selection(x11, event, XA_ATOM, 32,
@@ -396,22 +462,18 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
     if (len == -1)
         return;
 
-    if (x11->verbose) {
-        fprintf(stderr, "found: %d targets:\n", (int)len);
-        for (i = 0; i < len; i++)
-            fprintf(stderr, "%s\n", XGetAtomName(x11->display, atoms[i]));
-    }
+    vdagent_x11_print_targets(x11, "received", atoms, len);
 
     x11->clipboard_type_count = 0;
     atom = atom_lists_overlap(x11->utf8_atoms, atoms, utf8_atom_count, len);
     if (atom) {
         x11->clipboard_agent_types[x11->clipboard_type_count] =
             VD_AGENT_CLIPBOARD_UTF8_TEXT;
-        x11->clipboard_x11_types[x11->clipboard_type_count] = atom;
+        x11->clipboard_x11_targets[x11->clipboard_type_count] = atom;
         x11->clipboard_type_count++;
     }
 
-    /* TODO Place holder for checking for image type atoms */
+    /* TODO Add support for more types here */
 
     if (x11->clipboard_type_count) {
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, 0,
@@ -421,15 +483,30 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
     }
 }
 
-static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
+static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
+    XEvent *event, Atom prop)
 {
     XEvent res;
-    Window requestor_win = event->xselectionrequest.requestor;
-    Atom prop = event->xselectionrequest.property;
-    /* FIXME add MULTIPLE */
+
+    res.xselection.property = prop;
+    res.xselection.type = SelectionNotify;
+    res.xselection.display = event->xselectionrequest.display;
+    res.xselection.requestor = event->xselectionrequest.requestor;
+    res.xselection.selection = event->xselectionrequest.selection;
+    res.xselection.target = event->xselectionrequest.target;
+    res.xselection.time = event->xselectionrequest.time;
+    XSendEvent(x11->display, event->xselectionrequest.requestor, 0, 0, &res);
+    XFlush(x11->display);
+
+    x11->selection_request = x11->selection_request->next;
+    vdagent_x11_handle_selection_request(x11);
+}
+
+static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
+{
     /* Warning the size of this needs to be increased each time we add support
        for a new type, or the atom count of an existing type changes */
-    Atom targets[4] = { x11->targets_atom, };
+    Atom prop, targets[4] = { x11->targets_atom, };
     int i, j, target_count = 1;
 
     for (i = 0; i < x11->clipboard_type_count; i++) {
@@ -440,22 +517,58 @@ static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
                     target_count++;
                 }
                 break;
-            /* TODO Place holder for adding image type atoms */
+            /* TODO Add support for more types here */
         }
     }
 
-    XChangeProperty(x11->display, requestor_win, prop, XA_ATOM, 32,
-                    PropModeReplace, (unsigned char *)&targets, target_count);
+    prop = event->xselectionrequest.property;
+    if (prop == None)
+        prop = event->xselectionrequest.target;
 
-    res.xselection.property = prop;
-    res.xselection.type = SelectionNotify;
-    res.xselection.display = event->xselectionrequest.display;
-    res.xselection.requestor = requestor_win;
-    res.xselection.selection = event->xselectionrequest.selection;
-    res.xselection.target = event->xselectionrequest.target;
-    res.xselection.time = event->xselectionrequest.time;
-    XSendEvent(x11->display, requestor_win, 0, 0, &res);
-    XFlush(x11->display);
+    XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
+                    XA_ATOM, 32, PropModeReplace, (unsigned char *)&targets,
+                    target_count);
+    vdagent_x11_send_selection_notify(x11, event, prop);
+    vdagent_x11_print_targets(x11, "sent", targets, target_count);
+}
+
+static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
+{
+    XEvent *event;
+    uint32_t type = VD_AGENT_CLIPBOARD_NONE;
+
+    if (!x11->selection_request)
+        return;
+
+    event = &x11->selection_request->event;
+
+    if (x11->clipboard_owner != owner_client) {
+        fprintf(stderr,
+            "received selection request event for target %s, "
+            "while not owning client clipboard\n",
+            vdagent_x11_get_atom_name(x11, event->xselectionrequest.target));
+        vdagent_x11_send_selection_notify(x11, event, None);
+        return;
+    }
+
+    if (event->xselectionrequest.target == x11->multiple_atom) {
+        fprintf(stderr, "multiple target not supported\n");
+        vdagent_x11_send_selection_notify(x11, event, None);
+        return;
+    }
+
+    if (event->xselectionrequest.target == x11->targets_atom) {
+        vdagent_x11_send_targets(x11, event);
+        return;
+    }
+
+    type = vdagent_x11_target_to_type(x11, event->xselectionrequest.target);
+    if (type == VD_AGENT_CLIPBOARD_NONE) {
+        vdagent_x11_send_selection_notify(x11, event, None);
+        return;
+    }
+
+    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_REQUEST, type, NULL, 0);
 }
 
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
@@ -516,33 +629,26 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
 {
-    int i;
+    Atom target;
 
     if (x11->clipboard_owner != owner_guest) {
         fprintf(stderr,
                 "received clipboard req while not owning guest clipboard\n");
-        goto error;
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+        return;
+    }
+    
+    target = vdagent_x11_type_to_target(x11, type);
+    if (target == None) {
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+        return;
     }
 
-    for (i = 0; i < x11->clipboard_type_count; i++)
-        if (x11->clipboard_agent_types[i] == type)
-            break;
-
-    if (i == x11->clipboard_type_count) {
-        fprintf(stderr, "client requested unavailable type %u\n", type);
-        goto error;
-    }
-
-    XConvertSelection(x11->display, x11->clipboard_atom,
-                      x11->clipboard_x11_types[i],
+    XConvertSelection(x11->display, x11->clipboard_atom, target,
                       x11->clipboard_atom, x11->selection_window, CurrentTime);
     XFlush(x11->display);
-    return;
-
-error:
-    /* Notify the spice client that no answer is forthcoming */
-    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                VD_AGENT_CLIPBOARD_NONE, NULL, 0);
 }
 
 void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
@@ -552,6 +658,7 @@ void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
 
     x11->clipboard_type_count = 0;
     for (i = 0; i < type_count; i++) {
+        /* TODO Add support for more types here */
         /* Check if we support the type */
         if (types[i] != VD_AGENT_CLIPBOARD_UTF8_TEXT)
             continue;
@@ -567,4 +674,38 @@ void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
                        x11->selection_window, CurrentTime);
     XFlush(x11->display);
     vdagent_x11_set_clipboard_owner(x11, owner_client);
+}
+
+void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
+    const uint8_t *data, uint32_t size)
+{
+    Atom prop;
+    XEvent *event;
+    uint32_t type_from_event;
+
+    if (!x11->selection_request) {
+        fprintf(stderr, "received clipboard data without an outstanding"
+                        "selection request, ignoring\n");
+        return;
+    }
+
+    event = &x11->selection_request->event;
+    type_from_event = vdagent_x11_target_to_type(x11,
+                                             event->xselectionrequest.target);
+    if (type_from_event != type) {
+        fprintf(stderr, "expecting type %u clipboard data got %u\n",
+                type_from_event, type);
+        vdagent_x11_send_selection_notify(x11, event, None);
+        return;
+    }
+
+    prop = event->xselectionrequest.property;
+    if (prop == None)
+        prop = event->xselectionrequest.target;
+
+    XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
+                    event->xselectionrequest.target, 8, PropModeReplace,
+                    data, size);
+    XFlush(x11->display);
+    vdagent_x11_send_selection_notify(x11, event, prop);
 }

@@ -42,12 +42,15 @@ int daemon_read_complete(struct udscs_connection *conn,
     case VDAGENTD_MONITORS_CONFIG:
         vdagent_x11_set_monitor_config(x11, (VDAgentMonitorsConfig *)data);
         break;
+    case VDAGENTD_CLIPBOARD_REQUEST:
+        vdagent_x11_clipboard_request(x11, header->opaque);
+        break;
     case VDAGENTD_CLIPBOARD_GRAB:
         vdagent_x11_clipboard_grab(x11, (uint32_t *)data,
                                    header->size / sizeof(uint32_t));
         break;
-    case VDAGENTD_CLIPBOARD_REQUEST:
-        vdagent_x11_clipboard_request(x11, header->opaque);
+    case VDAGENTD_CLIPBOARD_DATA:
+        vdagent_x11_clipboard_data(x11, header->opaque, data, header->size);
         break;
     default:
         if (verbose)
