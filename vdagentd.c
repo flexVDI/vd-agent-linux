@@ -135,12 +135,11 @@ static void do_clipboard(struct vdagent_virtio_port *port,
     uint8_t *data = NULL;
 
     switch (message_header->type) {
-    case VD_AGENT_CLIPBOARD_GRAB: {
-        VDAgentClipboardGrab *grab = (VDAgentClipboardGrab *)message_data;
+    case VD_AGENT_CLIPBOARD_GRAB:
         type = VDAGENTD_CLIPBOARD_GRAB;
-        opaque = grab->type;
+        data = message_data;
+        size = message_header->size;
         break;
-    }
     case VD_AGENT_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
         type = VDAGENTD_CLIPBOARD_REQUEST;
@@ -238,13 +237,11 @@ void do_client_clipboard(struct udscs_connection *conn,
         goto error;
 
     switch (header->type) {
-    case VDAGENTD_CLIPBOARD_GRAB: {
-        VDAgentClipboardGrab grab = { .type = header->opaque };
+    case VDAGENTD_CLIPBOARD_GRAB:
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_GRAB, 0,
-                                  (uint8_t *)&grab, sizeof(grab));
+                                  data, header->size);
         break;
-    }
     case VDAGENTD_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest req = { .type = header->opaque };
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,

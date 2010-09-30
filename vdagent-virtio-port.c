@@ -138,7 +138,7 @@ int vdagent_virtio_port_write(
         uint32_t port_nr,
         uint32_t message_type,
         uint32_t message_opaque,
-        uint8_t *data,
+        const uint8_t *data,
         uint32_t data_size)
 {
     struct vdagent_virtio_port_buf *wbuf, *new_wbuf;

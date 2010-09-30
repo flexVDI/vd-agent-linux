@@ -34,18 +34,22 @@
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
 
+enum { owner_none, owner_guest, owner_client };
+
 const char *utf8_atom_names[] = {
     "UTF8_STRING",
     "text/plain;charset=UTF-8",
     "text/plain;charset=utf-8",
 };
 
+#define utf8_atom_count (sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0]))
+
 struct vdagent_x11 {
     Display *display;
     Atom clipboard_atom;
     Atom targets_atom;
     Atom incr_atom;
-    Atom utf8_atoms[sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0])];
+    Atom utf8_atoms[utf8_atom_count];
     Window root_window;
     Window selection_window;
     struct udscs_connection *vdagentd;
@@ -57,10 +61,12 @@ struct vdagent_x11 {
     int has_xrandr;
     int has_xfixes;
     int xfixes_event_base;
-    int own_client_clipboard;
-    int own_guest_clipboard;
-    uint32_t clipboard_agent_type;
-    Atom clipboard_x11_type;
+    int clipboard_owner;
+    int clipboard_type_count;
+    /* Warning the size of these needs to be increased each time we add
+       support for a new type!! */
+    uint32_t clipboard_agent_types[1];
+    Atom clipboard_x11_types[1];
 };
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
@@ -68,6 +74,7 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event);
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event);
+static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event);
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int verbose)
@@ -98,13 +105,16 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->clipboard_atom = XInternAtom(x11->display, "CLIPBOARD", False);
     x11->targets_atom = XInternAtom(x11->display, "TARGETS", False);
     x11->incr_atom = XInternAtom(x11->display, "INCR", False);
-    for(i = 0; i < sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0]); i++)
+    for(i = 0; i < utf8_atom_count; i++)
         x11->utf8_atoms[i] = XInternAtom(x11->display, utf8_atom_names[i],
                                          False);
 
     /* We should not store properties (for selections) on the root window */
     x11->selection_window = XCreateSimpleWindow(x11->display, x11->root_window,
                                                 0, 0, 1, 1, 0, 0, 0);
+    if (x11->verbose)
+        fprintf(stderr, "Selection window: %u\n",
+                (unsigned int)x11->selection_window);
 
     if (XRRQueryExtension(x11->display, &i, &i))
         x11->has_xrandr = 1;
@@ -148,6 +158,20 @@ int vdagent_x11_get_fd(struct vdagent_x11 *x11)
     return x11->fd;
 }
 
+static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
+    int new_owner)
+{
+    if (new_owner == owner_none) {
+        /* When going from owner_guest to owner_none we need to send a
+           clipboard release message to the client */
+        if (x11->clipboard_owner == owner_guest)
+           udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_RELEASE, 0, NULL, 0);
+
+        x11->clipboard_type_count = 0;
+    }
+    x11->clipboard_owner = new_owner;
+}
+
 void vdagent_x11_do_read(struct vdagent_x11 *x11)
 {
     XEvent event;
@@ -157,6 +181,7 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
         return;
 
     XNextEvent(x11->display, &event);
+
     if (event.type == x11->xfixes_event_base) {
         union {
             XEvent ev;
@@ -171,27 +196,29 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
             return;
         }
 
-        /* If the clipboard owner is changed we no longer own it */
-        x11->own_guest_clipboard = 0;
+        if (x11->verbose)
+            fprintf(stderr, "New selection owner: %u\n",
+                    (unsigned int)ev.xfev.owner);
 
-        /* If the clipboard is released and we've grabbed the client clipboard
-           release it */
-        if (ev.xfev.owner == None) {
-            if (x11->own_client_clipboard) {
-                udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_RELEASE, 0,
-                            NULL, 0);
-                x11->own_client_clipboard = 0;
-            }
+        /* Ignore becoming the owner ourselves */
+        if (ev.xfev.owner == x11->selection_window)
             return;
-        }
+
+        /* If the clipboard owner is changed we no longer own it */
+        vdagent_x11_set_clipboard_owner(x11, owner_none);
+
+        if (ev.xfev.owner == None)
+            return;
 
         /* Request the supported targets from the new owner */
         XConvertSelection(x11->display, x11->clipboard_atom, x11->targets_atom,
                           x11->clipboard_atom, x11->selection_window,
                           CurrentTime);
         XFlush(x11->display);
-        handled = 1;
-    } else switch (event.type) {
+        return;
+    }
+
+    switch (event.type) {
     case ConfigureNotify:
         if (event.xconfigure.window != x11->root_window)
             break;
@@ -214,6 +241,28 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
             vdagent_x11_handle_selection_notify(x11, &event);
 
         handled = 1;
+        break;
+    case SelectionClear:
+        /* Do nothing the clipboard ownership will get updated through
+           the XFixesSetSelectionOwnerNotify event */
+        handled = 1;
+        break;
+    case SelectionRequest:
+        handled = 1;
+
+        if (x11->clipboard_owner != owner_client) {
+            fprintf(stderr,
+                    "received selection event for target %s, "
+                    "while not owning client clipboard\n",
+                    XGetAtomName(x11->display, event.xselection.target));
+            break;
+        }
+
+        if (event.xselection.target == x11->targets_atom)
+            vdagent_x11_send_targets(x11, &event);
+        else
+            printf("FIXME\n");
+
         break;
     }
     if (!handled && x11->verbose)
@@ -293,12 +342,15 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event)
 {
-    int len;
+    int i, len;
     unsigned char *data = NULL;
 
-    if (event->xselection.target != x11->clipboard_x11_type) {
-        fprintf(stderr, "expecting %s data, got %s\n",
-                XGetAtomName(x11->display, x11->clipboard_x11_type),
+    for (i = 0; i < x11->clipboard_type_count; i++)
+        if (x11->clipboard_x11_types[i] == event->xselection.target)
+            break;
+
+    if (i == x11->clipboard_type_count) {
+        fprintf(stderr, "unexpected selection type %s\n",
                 XGetAtomName(x11->display, event->xselection.target));
         goto error;
     }
@@ -309,7 +361,7 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
         goto error;
 
     udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, 
-                x11->clipboard_agent_type, data, len);
+                x11->clipboard_agent_types[i], data, len);
     XFree(data);
     return;
 
@@ -337,13 +389,12 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event)
 {
     int i, len;
-    Atom x11_type, atom, *atoms = NULL;
-    uint32_t agent_type = VD_AGENT_CLIPBOARD_NONE;
+    Atom atom, *atoms = NULL;
 
     len = vdagent_x11_get_selection(x11, event, XA_ATOM, 32,
                                     (unsigned char **)&atoms);
     if (len == -1)
-        goto error;
+        return;
 
     if (x11->verbose) {
         fprintf(stderr, "found: %d targets:\n", (int)len);
@@ -351,30 +402,60 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
             fprintf(stderr, "%s\n", XGetAtomName(x11->display, atoms[i]));
     }
 
-    atom = atom_lists_overlap(x11->utf8_atoms, atoms,
-                     sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0]), len);
+    x11->clipboard_type_count = 0;
+    atom = atom_lists_overlap(x11->utf8_atoms, atoms, utf8_atom_count, len);
     if (atom) {
-        agent_type = VD_AGENT_CLIPBOARD_UTF8_TEXT;
-        x11_type = atom;
+        x11->clipboard_agent_types[x11->clipboard_type_count] =
+            VD_AGENT_CLIPBOARD_UTF8_TEXT;
+        x11->clipboard_x11_types[x11->clipboard_type_count] = atom;
+        x11->clipboard_type_count++;
     }
 
     /* TODO Place holder for checking for image type atoms */
 
-    if (agent_type != VD_AGENT_CLIPBOARD_NONE) {
-        x11->clipboard_agent_type = agent_type;
-        x11->clipboard_x11_type = x11_type;
-        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, agent_type,
-                    NULL, 0);
-        x11->own_client_clipboard = 1;
-        return;
+    if (x11->clipboard_type_count) {
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, 0,
+                    (uint8_t *)x11->clipboard_agent_types,
+                    x11->clipboard_type_count * sizeof(uint32_t));
+        vdagent_x11_set_clipboard_owner(x11, owner_guest);
+    }
+}
+
+static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
+{
+    XEvent res;
+    Window requestor_win = event->xselectionrequest.requestor;
+    Atom prop = event->xselectionrequest.property;
+    /* FIXME add MULTIPLE */
+    /* Warning the size of this needs to be increased each time we add support
+       for a new type, or the atom count of an existing type changes */
+    Atom targets[4] = { x11->targets_atom, };
+    int i, j, target_count = 1;
+
+    for (i = 0; i < x11->clipboard_type_count; i++) {
+        switch (x11->clipboard_agent_types[i]) {
+            case VD_AGENT_CLIPBOARD_UTF8_TEXT:
+                for (j = 0; j < utf8_atom_count; j++) {
+                    targets[target_count] = x11->utf8_atoms[j];
+                    target_count++;
+                }
+                break;
+            /* TODO Place holder for adding image type atoms */
+        }
     }
 
-    /* New selection contains an unsupported type release the clipboard */
-error:
-    if (x11->own_client_clipboard) {
-        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_RELEASE, 0, NULL, 0);
-        x11->own_client_clipboard = 0;
-    }
+    XChangeProperty(x11->display, requestor_win, prop, XA_ATOM, 32,
+                    PropModeReplace, (unsigned char *)&targets, target_count);
+
+    res.xselection.property = prop;
+    res.xselection.type = SelectionNotify;
+    res.xselection.display = event->xselectionrequest.display;
+    res.xselection.requestor = requestor_win;
+    res.xselection.selection = event->xselectionrequest.selection;
+    res.xselection.target = event->xselectionrequest.target;
+    res.xselection.time = event->xselectionrequest.time;
+    XSendEvent(x11->display, requestor_win, 0, 0, &res);
+    XFlush(x11->display);
 }
 
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
@@ -435,19 +516,25 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
 {
-    if (!x11->own_client_clipboard) {
+    int i;
+
+    if (x11->clipboard_owner != owner_guest) {
         fprintf(stderr,
-                "received clipboard req while not owning client clipboard\n");
+                "received clipboard req while not owning guest clipboard\n");
         goto error;
     }
-    if (type != x11->clipboard_agent_type) {
-        fprintf(stderr, "have type %u clipboard data, client asked for %u\n",
-                x11->clipboard_agent_type, type);
+
+    for (i = 0; i < x11->clipboard_type_count; i++)
+        if (x11->clipboard_agent_types[i] == type)
+            break;
+
+    if (i == x11->clipboard_type_count) {
+        fprintf(stderr, "client requested unavailable type %u\n", type);
         goto error;
     }
 
     XConvertSelection(x11->display, x11->clipboard_atom,
-                      x11->clipboard_x11_type,
+                      x11->clipboard_x11_types[i],
                       x11->clipboard_atom, x11->selection_window, CurrentTime);
     XFlush(x11->display);
     return;
@@ -456,4 +543,28 @@ error:
     /* Notify the spice client that no answer is forthcoming */
     udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
                 VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+}
+
+void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
+    uint32_t type_count)
+{
+    int i;
+
+    x11->clipboard_type_count = 0;
+    for (i = 0; i < type_count; i++) {
+        /* Check if we support the type */
+        if (types[i] != VD_AGENT_CLIPBOARD_UTF8_TEXT)
+            continue;
+
+        x11->clipboard_agent_types[x11->clipboard_type_count] = types[i];
+        x11->clipboard_type_count++;
+    }
+
+    if (!x11->clipboard_type_count)
+        return;
+
+    XSetSelectionOwner(x11->display, x11->clipboard_atom,
+                       x11->selection_window, CurrentTime);
+    XFlush(x11->display);
+    vdagent_x11_set_clipboard_owner(x11, owner_client);
 }
