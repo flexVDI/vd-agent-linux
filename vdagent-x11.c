@@ -83,6 +83,9 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event);
+static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
+                                              Atom prop,
+                                              int process_next_req);
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int verbose)
@@ -170,6 +173,14 @@ int vdagent_x11_get_fd(struct vdagent_x11 *x11)
 static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     int new_owner)
 {
+    if (x11->selection_request) {
+         fprintf(stderr,
+                 "selection requests pending on clipboard ownership change, "
+                 "clearing");
+         while (x11->selection_request)
+             vdagent_x11_send_selection_notify(x11, None, 0);
+    }
+
     if (new_owner == owner_none) {
         /* When going from owner_guest to owner_none we need to send a
            clipboard release message to the client */
@@ -498,9 +509,9 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
 }
 
 static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
-    XEvent *event, Atom prop)
+    Atom prop, int process_next_req)
 {
-    XEvent res;
+    XEvent res, *event = &x11->selection_request->event;
     struct vdagent_x11_selection_request *selection_request;
 
     res.xselection.property = prop;
@@ -516,7 +527,8 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
     selection_request = x11->selection_request;
     x11->selection_request = selection_request->next;
     free(selection_request);
-    vdagent_x11_handle_selection_request(x11);
+    if (process_next_req)
+        vdagent_x11_handle_selection_request(x11);
 }
 
 static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
@@ -545,7 +557,7 @@ static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
     XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
                     XA_ATOM, 32, PropModeReplace, (unsigned char *)&targets,
                     target_count);
-    vdagent_x11_send_selection_notify(x11, event, prop);
+    vdagent_x11_send_selection_notify(x11, prop, 1);
     vdagent_x11_print_targets(x11, "sent", targets, target_count);
 }
 
@@ -564,13 +576,13 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
             "received selection request event for target %s, "
             "while not owning client clipboard\n",
             vdagent_x11_get_atom_name(x11, event->xselectionrequest.target));
-        vdagent_x11_send_selection_notify(x11, event, None);
+        vdagent_x11_send_selection_notify(x11, None, 1);
         return;
     }
 
     if (event->xselectionrequest.target == x11->multiple_atom) {
         fprintf(stderr, "multiple target not supported\n");
-        vdagent_x11_send_selection_notify(x11, event, None);
+        vdagent_x11_send_selection_notify(x11, None, 1);
         return;
     }
 
@@ -581,7 +593,7 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
 
     type = vdagent_x11_target_to_type(x11, event->xselectionrequest.target);
     if (type == VD_AGENT_CLIPBOARD_NONE) {
-        vdagent_x11_send_selection_notify(x11, event, None);
+        vdagent_x11_send_selection_notify(x11, None, 1);
         return;
     }
 
@@ -712,7 +724,7 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
     if (type_from_event != type) {
         fprintf(stderr, "expecting type %u clipboard data got %u\n",
                 type_from_event, type);
-        vdagent_x11_send_selection_notify(x11, event, None);
+        vdagent_x11_send_selection_notify(x11, None, 1);
         return;
     }
 
@@ -724,5 +736,5 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
                     event->xselectionrequest.target, 8, PropModeReplace,
                     data, size);
     XFlush(x11->display);
-    vdagent_x11_send_selection_notify(x11, event, prop);
+    vdagent_x11_send_selection_notify(x11, prop, 1);
 }
