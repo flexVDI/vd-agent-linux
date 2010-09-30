@@ -387,7 +387,7 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
         return 0;
     }
 
-    /* FIXME maybe limit the write_buf stack depth ? */
+    /* maybe we should limit the write_buf stack depth ? */
     wbuf = conn->write_buf;
     while (wbuf->next)
         wbuf = wbuf->next;

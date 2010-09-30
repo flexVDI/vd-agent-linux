@@ -176,7 +176,7 @@ int vdagent_virtio_port_write(
         return 0;
     }
 
-    /* FIXME maybe limit the write_buf stack depth ? */
+    /* maybe we should limit the write_buf stack depth ? */
     wbuf = port->write_buf;
     while (wbuf->next)
         wbuf = wbuf->next;
