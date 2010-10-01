@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        if (FD_SET(x11_fd, &readfds))
+        if (FD_ISSET(x11_fd, &readfds))
             vdagent_x11_do_read(x11);
         udscs_client_handle_fds(&client, &readfds, &writefds);
     }
