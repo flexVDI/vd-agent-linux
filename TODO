@@ -17,7 +17,6 @@ agents whose unix domain socket has the same uid.
 
 Various things:
 -make uinput communication non blocking
--copy and paste: add support for release command from client
 -patch xorg driver to allow adding "random" resolutions
 -make vdagent xorg client try to add "random" resolutions
 -fedora package

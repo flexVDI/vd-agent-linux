@@ -738,3 +738,16 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
     XFlush(x11->display);
     vdagent_x11_send_selection_notify(x11, prop, 1);
 }
+
+void vdagent_x11_clipboard_release(struct vdagent_x11 *x11)
+{
+    if (x11->clipboard_owner != owner_client) {
+        fprintf(stderr,
+            "received clipboard release while not owning client clipboard\n");
+        return;
+    }
+
+    XSetSelectionOwner(x11->display, x11->clipboard_atom, None, CurrentTime);
+    XFlush(x11->display);
+    vdagent_x11_set_clipboard_owner(x11, owner_none);
+}

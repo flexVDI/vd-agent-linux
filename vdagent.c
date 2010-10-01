@@ -52,6 +52,9 @@ int daemon_read_complete(struct udscs_connection *conn,
     case VDAGENTD_CLIPBOARD_DATA:
         vdagent_x11_clipboard_data(x11, header->opaque, data, header->size);
         break;
+    case VDAGENTD_CLIPBOARD_RELEASE:
+        vdagent_x11_clipboard_release(x11);
+        break;
     default:
         if (verbose)
             fprintf(stderr, "Unknown message from vdagentd type: %d\n",
