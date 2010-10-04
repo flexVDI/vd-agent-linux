@@ -192,12 +192,10 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     x11->clipboard_owner = new_owner;
 }
 
-static void vdagent_x11_handle_event(struct vdagent_x11 *x11)
+static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
 {
-    XEvent event;
     int handled = 0;
 
-    XNextEvent(x11->display, &event);
 
     if (event.type == x11->xfixes_event_base) {
         union {
@@ -301,8 +299,12 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11)
 
 void vdagent_x11_do_read(struct vdagent_x11 *x11)
 {
-    while(XPending(x11->display))
-         vdagent_x11_handle_event(x11);
+    XEvent event;
+
+    while (XPending(x11->display)) {
+        XNextEvent(x11->display, &event);
+        vdagent_x11_handle_event(x11, event);
+    }
 }
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
@@ -478,14 +480,17 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
 
     /* If we have more targets_notifies pending, ignore this one, we
        are only interested in the targets list of the current owner
-       (which is the last one we've requested a targets list from */
+       (which is the last one we've requested a targets list from) */
     if (x11->expected_targets_notifies)
         return;
 
     len = vdagent_x11_get_selection(x11, event, XA_ATOM, x11->targets_atom, 32,
                                     (unsigned char **)&atoms);
-    if (len == -1)
+    if (len == -1) {
+        if (atoms)
+            XFree(atoms);
         return;
+    }
 
     vdagent_x11_print_targets(x11, "received", atoms, len);
 
@@ -506,6 +511,7 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                     x11->clipboard_type_count * sizeof(uint32_t));
         vdagent_x11_set_clipboard_owner(x11, owner_guest);
     }
+    XFree(atoms);
 }
 
 static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
@@ -557,8 +563,8 @@ static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
     XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
                     XA_ATOM, 32, PropModeReplace, (unsigned char *)&targets,
                     target_count);
-    vdagent_x11_send_selection_notify(x11, prop, 1);
     vdagent_x11_print_targets(x11, "sent", targets, target_count);
+    vdagent_x11_send_selection_notify(x11, prop, 1);
 }
 
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
@@ -667,7 +673,7 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
                     VD_AGENT_CLIPBOARD_NONE, NULL, 0);
         return;
     }
-    
+
     target = vdagent_x11_type_to_target(x11, type);
     if (target == None) {
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
@@ -732,15 +738,17 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
     if (prop == None)
         prop = event->xselectionrequest.target;
 
+    /* FIXME: use INCR for large data transfers */
     XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
                     event->xselectionrequest.target, 8, PropModeReplace,
                     data, size);
-    XFlush(x11->display);
     vdagent_x11_send_selection_notify(x11, prop, 1);
 }
 
 void vdagent_x11_clipboard_release(struct vdagent_x11 *x11)
 {
+    XEvent event;
+
     if (x11->clipboard_owner != owner_client) {
         fprintf(stderr,
             "received clipboard release while not owning client clipboard\n");
@@ -748,6 +756,14 @@ void vdagent_x11_clipboard_release(struct vdagent_x11 *x11)
     }
 
     XSetSelectionOwner(x11->display, x11->clipboard_atom, None, CurrentTime);
-    XFlush(x11->display);
-    vdagent_x11_set_clipboard_owner(x11, owner_none);
+    /* Make sure we process the XFixesSetSelectionOwnerNotify event caused
+       by this, so we don't end up changing the clipboard owner to none, after
+       it has already been re-owned because this event is still pending. */
+    XSync(x11->display, False);
+    while (XCheckTypedEvent(x11->display, x11->xfixes_event_base,
+                            &event))
+        vdagent_x11_handle_event(x11, event);
+
+    /* Note no need to do a set_clipboard_owner(owner_none) here, as that is
+       already done by processing the XFixesSetSelectionOwnerNotify event. */
 }
