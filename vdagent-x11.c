@@ -37,26 +37,41 @@
 
 enum { owner_none, owner_guest, owner_client };
 
-const char *utf8_atom_names[] = {
-    "UTF8_STRING",
-    "text/plain;charset=UTF-8",
-    "text/plain;charset=utf-8",
-};
-
-#define utf8_atom_count (sizeof(utf8_atom_names)/sizeof(utf8_atom_names[0]))
-
 struct vdagent_x11_selection_request {
     XEvent event;
     struct vdagent_x11_selection_request *next;
 };
 
+struct clipboard_format_tmpl {
+    uint32_t type;
+    const char *atom_names[16];
+};
+
+struct clipboard_format_info {
+    uint32_t type;
+    Atom atoms[16];
+    int atom_count;
+};
+
+static const struct clipboard_format_tmpl clipboard_format_templates[] = {
+    { VD_AGENT_CLIPBOARD_UTF8_TEXT, { "UTF8_STRING",
+      "text/plain;charset=UTF-8", "text/plain;charset=utf-8", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_PNG, { "image/png", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_BMP, { "image/bmp", "image/x-bmp",
+      "image/x-MS-bmp", "image/x-win-bitmap", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_TIFF, { "image/tiff", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_JPG, { "image/jpeg", NULL }, },
+};
+
+#define clipboard_format_count (sizeof(clipboard_format_templates)/sizeof(clipboard_format_templates[0]))
+
 struct vdagent_x11 {
+    struct clipboard_format_info clipboard_formats[clipboard_format_count];
     Display *display;
     Atom clipboard_atom;
     Atom targets_atom;
     Atom incr_atom;
     Atom multiple_atom;
-    Atom utf8_atoms[utf8_atom_count];
     Window root_window;
     Window selection_window;
     struct udscs_connection *vdagentd;
@@ -73,11 +88,8 @@ struct vdagent_x11 {
     int clipboard_owner;
     Atom clipboard_request_target;
     int clipboard_type_count;
-    /* TODO Add support for more types here */
-    /* Warning the size of these needs to be increased each time we add
-       support for a new type!! */
-    uint32_t clipboard_agent_types[1];
-    Atom clipboard_x11_targets[1];
+    uint32_t clipboard_agent_types[256];
+    Atom clipboard_x11_targets[256];
     uint8_t *clipboard_data;
     uint32_t clipboard_data_size;
     uint32_t clipboard_data_space;
@@ -99,7 +111,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
 {
     struct vdagent_x11 *x11;
     XWindowAttributes attrib;
-    int i, major, minor;
+    int i, j, major, minor;
 
     x11 = calloc(1, sizeof(*x11));
     if (!x11) {
@@ -124,9 +136,16 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->targets_atom = XInternAtom(x11->display, "TARGETS", False);
     x11->incr_atom = XInternAtom(x11->display, "INCR", False);
     x11->multiple_atom = XInternAtom(x11->display, "MULTIPLE", False);
-    for(i = 0; i < utf8_atom_count; i++)
-        x11->utf8_atoms[i] = XInternAtom(x11->display, utf8_atom_names[i],
-                                         False);
+    for(i = 0; i < clipboard_format_count; i++) {
+        x11->clipboard_formats[i].type = clipboard_format_templates[i].type;
+        for(j = 0; clipboard_format_templates[i].atom_names[j]; j++) {
+            x11->clipboard_formats[i].atoms[j] =
+                XInternAtom(x11->display,
+                            clipboard_format_templates[i].atom_names[j],
+                            False);
+        }
+        x11->clipboard_formats[i].atom_count = j;
+    }
 
     /* We should not store properties (for selections) on the root window */
     x11->selection_window = XCreateSimpleWindow(x11->display, x11->root_window,
@@ -509,17 +528,19 @@ static void vdagent_x11_get_selection_free(struct vdagent_x11 *x11,
 static uint32_t vdagent_x11_target_to_type(struct vdagent_x11 *x11,
                                            Atom target)
 {
-    int i;
+    int i, j;
 
     if (target == None)
         return VD_AGENT_CLIPBOARD_NONE;
 
-    for (i = 0; i < utf8_atom_count; i++)
-        if (x11->utf8_atoms[i] == target)
-            return VD_AGENT_CLIPBOARD_UTF8_TEXT;
+    for (i = 0; i < clipboard_format_count; i++) {
+        for (j = 0; j < x11->clipboard_formats[i].atom_count; i++) {
+            if (x11->clipboard_formats[i].atoms[j] == target) {
+                return x11->clipboard_formats[i].type;
+            }
+        }
+    }
 
-    /* TODO Add support for more types here */
-    
     fprintf(stderr, "unexpected selection type %s\n",
             vdagent_x11_get_atom_name(x11, target));
     return VD_AGENT_CLIPBOARD_NONE;
@@ -596,7 +617,7 @@ static void vdagent_x11_print_targets(struct vdagent_x11 *x11,
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event, int incr)
 {
-    int len;
+    int i, len;
     Atom atom, *atoms = NULL;
 
     if (!x11->expected_targets_notifies) {
@@ -622,15 +643,21 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
     vdagent_x11_print_targets(x11, "received", atoms, len);
 
     x11->clipboard_type_count = 0;
-    atom = atom_lists_overlap(x11->utf8_atoms, atoms, utf8_atom_count, len);
-    if (atom) {
-        x11->clipboard_agent_types[x11->clipboard_type_count] =
-            VD_AGENT_CLIPBOARD_UTF8_TEXT;
-        x11->clipboard_x11_targets[x11->clipboard_type_count] = atom;
-        x11->clipboard_type_count++;
+    for (i = 0; i < clipboard_format_count; i++) {
+        atom = atom_lists_overlap(x11->clipboard_formats[i].atoms, atoms,
+                                  x11->clipboard_formats[i].atom_count, len);
+        if (atom) {
+            x11->clipboard_agent_types[x11->clipboard_type_count] =
+                x11->clipboard_formats[i].type;
+            x11->clipboard_x11_targets[x11->clipboard_type_count] = atom;
+            x11->clipboard_type_count++;
+            if (x11->clipboard_type_count ==
+                    sizeof(x11->clipboard_agent_types)/sizeof(uint32_t)) {
+                fprintf(stderr, "handle_targets_notify: too much types\n");
+                break;
+            }
+        }
     }
-
-    /* TODO Add support for more types here */
 
     if (x11->clipboard_type_count) {
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, 0,
@@ -667,23 +694,26 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
 
 static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
 {
-    /* TODO Add support for more types here */
-    /* Warning the size of this needs to be increased each time we add support
-       for a new type, or the atom count of an existing type changes */
-    Atom prop, targets[4] = { x11->targets_atom, };
-    int i, j, target_count = 1;
+    Atom prop, targets[256] = { x11->targets_atom, };
+    int i, j, k, target_count = 1;
 
     for (i = 0; i < x11->clipboard_type_count; i++) {
-        switch (x11->clipboard_agent_types[i]) {
-            case VD_AGENT_CLIPBOARD_UTF8_TEXT:
-                for (j = 0; j < utf8_atom_count; j++) {
-                    targets[target_count] = x11->utf8_atoms[j];
-                    target_count++;
+        for (j = 0; j < clipboard_format_count; j++) {
+            if (x11->clipboard_formats[j].type !=
+                    x11->clipboard_agent_types[i])
+                continue;
+
+            for (k = 0; k < x11->clipboard_formats[j].atom_count; k++) {
+                targets[target_count] = x11->clipboard_formats[j].atoms[k];
+                target_count++;
+                if (target_count == sizeof(targets)/sizeof(Atom)) {
+                    fprintf(stderr, "send_targets: too much targets\n");
+                    goto exit_loop;
                 }
-                break;
-            /* TODO Add support for more types here */
+            }
         }
     }
+exit_loop:
 
     prop = event->xselectionrequest.property;
     if (prop == None)
@@ -825,21 +855,13 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
 void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
     uint32_t type_count)
 {
-    int i;
-
-    x11->clipboard_type_count = 0;
-    for (i = 0; i < type_count; i++) {
-        /* TODO Add support for more types here */
-        /* Check if we support the type */
-        if (types[i] != VD_AGENT_CLIPBOARD_UTF8_TEXT)
-            continue;
-
-        x11->clipboard_agent_types[x11->clipboard_type_count] = types[i];
-        x11->clipboard_type_count++;
+    if (type_count > sizeof(x11->clipboard_agent_types)/sizeof(uint32_t)) {
+        fprintf(stderr, "x11_clipboard_grab: too much types\n");
+        type_count = sizeof(x11->clipboard_agent_types)/sizeof(uint32_t);
     }
 
-    if (!x11->clipboard_type_count)
-        return;
+    memcpy(x11->clipboard_agent_types, types, type_count * sizeof(uint32_t));
+    x11->clipboard_type_count = type_count;
 
     XSetSelectionOwner(x11->display, x11->clipboard_atom,
                        x11->selection_window, CurrentTime);
