@@ -397,9 +397,6 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
         }
     }
 
-    /* FIXME when we've incr support we should not immediately
-       delete the property (as we need to first register for
-       property change events) */
     if (XGetWindowProperty(x11->display, x11->selection_window, prop, 0,
                            LONG_MAX, del, type, &type_ret, &format_ret, &len,
                            &remain, &data) != Success) {
@@ -575,7 +572,7 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                 vdagent_x11_get_atom_name(x11, x11->clipboard_request_target),
                 vdagent_x11_get_atom_name(x11, event->xselection.target));
     else
-        len = vdagent_x11_get_selection(x11, event, event->xselection.target,
+        len = vdagent_x11_get_selection(x11, event, x11->clipboard_request_target,
                                         x11->clipboard_atom, 8, &data, incr);
     if (len == 0) /* waiting for more data? */
         return;
