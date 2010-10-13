@@ -41,10 +41,13 @@ struct vdagent_virtio_port {
 
     /* Read stuff, single buffer, separate header and data buffer */
     int chunk_header_read;
+    int chunk_data_pos;
     int message_header_read;
+    int message_data_pos;
     VDIChunkHeader chunk_header;
     VDAgentMessage message_header;
-    struct vdagent_virtio_port_buf data;
+    uint8_t chunk_data[VD_AGENT_MAX_DATA_SIZE];
+    uint8_t *message_data;
 
     /* Writes are stored in a linked list of buffers, with both the header
        + data for a single message in 1 buffer. */
@@ -100,7 +103,7 @@ void vdagent_virtio_port_destroy(struct vdagent_virtio_port **portp)
         wbuf = next_wbuf;
     }
 
-    free(port->data.buf);
+    free(port->message_data);
 
     close(port->fd);
     free(port);
@@ -186,23 +189,77 @@ int vdagent_virtio_port_write(
     return 0;
 }
 
+static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **portp)
+{
+    int avail, read, pos = 0;
+    struct vdagent_virtio_port *port = *portp;
+
+    if (port->message_header_read < sizeof(port->message_header)) {
+        read = sizeof(port->message_header) - port->message_header_read;
+        memcpy((uint8_t *)&port->message_header + port->message_header_read,
+               port->chunk_data, read);
+        port->message_header_read += read;
+        if (port->message_header_read == sizeof(port->message_header) &&
+                port->message_header.size) {
+            port->message_data = malloc(port->message_header.size);
+            if (!port->message_data) {
+                fprintf(stderr, "out of memory, disconnecting virtio\n");
+                vdagent_virtio_port_destroy(portp);
+                return;
+            }
+        }
+        pos = read;
+    }
+
+    if (port->message_header_read == sizeof(port->message_header)) {
+        read  = port->message_header.size - port->message_data_pos;
+        avail = port->chunk_header.size - pos;
+
+        if (avail > read) {
+            fprintf(stderr, "chunk larger then message, lost sync?\n");
+            vdagent_virtio_port_destroy(portp);
+            return;
+        }
+
+        if (avail < read)
+            read = avail;
+
+        if (read) {
+            memcpy(port->message_data + port->message_data_pos,
+                   port->chunk_data + pos, read);
+            port->message_data_pos += read;
+        }
+
+        if (port->message_data_pos == port->message_header.size) {
+            if (port->read_callback) {
+                int r = port->read_callback(port, &port->chunk_header,
+                                    &port->message_header, port->message_data);
+                if (r == -1) {
+                    vdagent_virtio_port_destroy(portp);
+                    return;
+                }
+            }
+            port->message_header_read = 0;
+            port->message_data_pos = 0;
+            free(port->message_data);
+            port->message_data = NULL;
+        }
+    }
+}
+
 static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **portp)
 {
     ssize_t n;
     size_t to_read;
     uint8_t *dest;
-    int r;
     struct vdagent_virtio_port *port = *portp;
 
     if (port->chunk_header_read < sizeof(port->chunk_header)) {
         to_read = sizeof(port->chunk_header) - port->chunk_header_read;
         dest = (uint8_t *)&port->chunk_header + port->chunk_header_read;
-    } else if (port->message_header_read < sizeof(port->message_header)) {
-        to_read = sizeof(port->message_header) - port->message_header_read;
-        dest = (uint8_t *)&port->message_header + port->message_header_read;
     } else {
-        to_read = port->data.size - port->data.pos;
-        dest = port->data.buf + port->data.pos;
+        to_read = port->chunk_header.size - port->chunk_data_pos;
+        dest = port->chunk_data + port->chunk_data_pos;
     }
 
     n = read(port->fd, dest, to_read);
@@ -219,60 +276,18 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **portp)
     if (port->chunk_header_read < sizeof(port->chunk_header)) {
         port->chunk_header_read += n;
         if (port->chunk_header_read == sizeof(port->chunk_header)) {
-            if (port->chunk_header.size < sizeof(port->message_header)) {
-                fprintf(stderr, "chunk size < message header size\n");
+            if (port->chunk_header.size > VD_AGENT_MAX_DATA_SIZE) {
+                fprintf(stderr, "chunk size too large\n");
                 vdagent_virtio_port_destroy(portp);
                 return;
-            }
-            port->message_header_read = 0;
-        }
-    } else if (port->message_header_read < sizeof(port->message_header)) {
-        port->message_header_read += n;
-        if (port->message_header_read == sizeof(port->message_header)) {
-            if (port->message_header.size !=
-                    (port->chunk_header.size - sizeof(port->message_header))) {
-                fprintf(stderr,
-                        "read: chunk vs message header size mismatch\n");
-                vdagent_virtio_port_destroy(portp);
-                return;
-            }
-            if (port->message_header.size == 0) {
-                if (port->read_callback) {
-                    r = port->read_callback(port, &port->chunk_header,
-                                            &port->message_header, NULL);
-                    if (r == -1) {
-                        vdagent_virtio_port_destroy(portp);
-                        return;
-                    }
-                }
-                port->chunk_header_read = 0;
-                port->message_header_read = 0;
-            } else {
-                port->data.pos = 0;
-                port->data.size = port->message_header.size;
-                port->data.buf = malloc(port->data.size);
-                if (!port->data.buf) {
-                    fprintf(stderr, "out of memory, disportecting client\n");
-                    vdagent_virtio_port_destroy(portp);
-                    return;
-                }
             }
         }
     } else {
-        port->data.pos += n;
-        if (port->data.pos == port->data.size) {
-            if (port->read_callback) {
-                r = port->read_callback(port, &port->chunk_header,
-                                        &port->message_header, port->data.buf);
-                if (r == -1) {
-                    vdagent_virtio_port_destroy(portp);
-                    return;
-                }
-            }
-            free(port->data.buf);
+        port->chunk_data_pos += n;
+        if (port->chunk_data_pos == port->chunk_header.size) {
+            vdagent_virtio_port_do_chunk(portp);
             port->chunk_header_read = 0;
-            port->message_header_read = 0;
-            memset(&port->data, 0, sizeof(port->data));
+            port->chunk_data_pos = 0;
         }
     }
 }
