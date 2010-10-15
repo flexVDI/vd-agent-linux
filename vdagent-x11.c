@@ -650,7 +650,7 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
             x11->clipboard_type_count++;
             if (x11->clipboard_type_count ==
                     sizeof(x11->clipboard_agent_types)/sizeof(uint32_t)) {
-                fprintf(stderr, "handle_targets_notify: too much types\n");
+                fprintf(stderr, "handle_targets_notify: too many types\n");
                 break;
             }
         }
@@ -704,7 +704,7 @@ static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
                 targets[target_count] = x11->clipboard_formats[j].atoms[k];
                 target_count++;
                 if (target_count == sizeof(targets)/sizeof(Atom)) {
-                    fprintf(stderr, "send_targets: too much targets\n");
+                    fprintf(stderr, "send_targets: too many targets\n");
                     goto exit_loop;
                 }
             }
@@ -853,7 +853,7 @@ void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
     uint32_t type_count)
 {
     if (type_count > sizeof(x11->clipboard_agent_types)/sizeof(uint32_t)) {
-        fprintf(stderr, "x11_clipboard_grab: too much types\n");
+        fprintf(stderr, "x11_clipboard_grab: too many types\n");
         type_count = sizeof(x11->clipboard_agent_types)/sizeof(uint32_t);
     }
 
