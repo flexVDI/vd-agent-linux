@@ -816,6 +816,9 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                        rotation, CurrentTime);
     XRRFreeScreenConfigInfo(config);
     XFlush(x11->display);
+    x11->width = sizes[best].width;
+    x11->height = sizes[best].height;
+    vdagent_x11_send_daemon_guest_xorg_res(x11);
 }
 
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
