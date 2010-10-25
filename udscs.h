@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 
 struct udscs_connection;
 struct udscs_server;
@@ -106,5 +107,8 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
 int udscs_server_write_all(struct udscs_server *server,
         uint32_t type, uint32_t opaque,
         const uint8_t *data, uint32_t size);
+
+
+struct ucred udscs_get_peer_cred(struct udscs_connection *conn);
 
 #endif

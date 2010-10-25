@@ -44,6 +44,7 @@ struct udscs_connection {
     int no_types;
     FILE *logfile;
     FILE *errfile;
+    struct ucred peer_cred;
 
     /* Read stuff, single buffer, separate header and data buffer */
     int header_read;
@@ -233,6 +234,11 @@ void udscs_destroy_connection(struct udscs_connection **connp)
     *connp = NULL;
 }
 
+struct ucred udscs_get_peer_cred(struct udscs_connection *conn)
+{
+    return conn->peer_cred;
+}
+
 int udscs_server_fill_fds(struct udscs_server *server, fd_set *readfds,
         fd_set *writefds)
 {
@@ -272,10 +278,10 @@ int udscs_client_fill_fds(struct udscs_connection *conn, fd_set *readfds,
 static void udscs_server_accept(struct udscs_server *server) {
     struct udscs_connection *new_conn, *conn;
     struct sockaddr_un address;
-    socklen_t address_length = sizeof(address);
-    int fd;
+    socklen_t length = sizeof(address);
+    int r, fd;
 
-    fd = accept(server->fd, (struct sockaddr *)&address, &address_length);
+    fd = accept(server->fd, (struct sockaddr *)&address, &length);
     if (fd == -1) {
         if (errno == EINTR)
             return;
@@ -298,6 +304,16 @@ static void udscs_server_accept(struct udscs_server *server) {
     new_conn->read_callback = server->read_callback;
     new_conn->disconnect_callback = server->disconnect_callback;
 
+    length = sizeof(new_conn->peer_cred);
+    r = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &new_conn->peer_cred, &length);
+    if (r != 0) {
+        fprintf(server->errfile,
+                "Could not get peercred, disconnecting new client\n");
+        close(fd);
+        free(new_conn);
+        return;
+    }
+
     conn = &server->connections_head;
     while (conn->next)
         conn = conn->next;
@@ -306,7 +322,8 @@ static void udscs_server_accept(struct udscs_server *server) {
     conn->next = new_conn;
 
     if (server->logfile)
-        fprintf(server->logfile, "new client accepted: %p\n", new_conn);
+        fprintf(server->logfile, "new client accepted: %p, pid: %d\n",
+                new_conn, (int)new_conn->peer_cred.pid);
 
     if (server->connect_callback)
         server->connect_callback(new_conn);
