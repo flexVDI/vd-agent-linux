@@ -5,7 +5,9 @@ udevdir	?= /lib/udev/rules.d
 
 CFLAGS	?= -O2
 CFLAGS	+= -g -Wall
-CFLAGS  += $(shell pkg-config --cflags spice-protocol) -D_GNU_SOURCE
+CFLAGS  += $(shell pkg-config --cflags spice-protocol)
+CFLAGS  += $(shell pkg-config --cflags dbus-1)
+CFLAGS  += -D_GNU_SOURCE
 
 TARGETS	:= vdagentd vdagent
 
@@ -20,8 +22,8 @@ install: build
 clean:
 	rm -f $(TARGETS) *.o *~
 
-vdagentd: vdagentd.o vdagentd-uinput.o udscs.o vdagent-virtio-port.o
-	$(CC) -o $@ $^
+vdagentd: vdagentd.o vdagentd-uinput.o udscs.o vdagent-virtio-port.o console-kit.o
+	$(CC) -o $@ $^ $(shell pkg-config --libs dbus-1)
 
 vdagent: vdagent.o vdagent-x11.o udscs.o
 	$(CC) -o $@ $^ -lX11 -lXrandr -lXfixes
