@@ -45,6 +45,7 @@ struct udscs_connection {
     FILE *logfile;
     FILE *errfile;
     struct ucred peer_cred;
+    void *user_data;
 
     /* Read stuff, single buffer, separate header and data buffer */
     int header_read;
@@ -542,4 +543,14 @@ static void udscs_do_write(struct udscs_connection **connp)
         free(wbuf->buf);
         free(wbuf);
     }
+}
+
+void udscs_set_user_data(struct udscs_connection *conn, void *data)
+{
+    conn->user_data = data;
+}
+
+void *udscs_get_user_data(struct udscs_connection *conn)
+{
+    return conn->user_data;
 }

@@ -111,4 +111,8 @@ int udscs_server_write_all(struct udscs_server *server,
 
 struct ucred udscs_get_peer_cred(struct udscs_connection *conn);
 
+/* For server use, to associate per connection data with a connection */
+void udscs_set_user_data(struct udscs_connection *conn, void *data);
+void *udscs_get_user_data(struct udscs_connection *conn);
+
 #endif
