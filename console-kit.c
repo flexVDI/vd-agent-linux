@@ -28,6 +28,7 @@
 
 struct console_kit {
     DBusConnection *connection;
+    int fd;
     char *seat;
     char *active_session;
     FILE *errfile;
@@ -58,6 +59,12 @@ struct console_kit *console_kit_create(FILE *errfile)
         } else
              fprintf(ck->errfile, "Unable to connect to system bus\n");
         free(ck);
+        return NULL;
+    }
+    
+    if (!dbus_connection_get_unix_fd(ck->connection, &ck->fd)) {
+        fprintf(ck->errfile, "Unable to get connection fd\n");
+        console_kit_destroy(ck);
         return NULL;
     }
 
@@ -95,6 +102,11 @@ void console_kit_destroy(struct console_kit *ck)
     free(ck->seat);
     free(ck->active_session);
     free(ck);
+}
+
+int console_kit_get_fd(struct console_kit *ck)
+{
+    return ck->fd;
 }
 
 static char *console_kit_get_first_seat(struct console_kit *ck)
