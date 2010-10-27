@@ -49,6 +49,37 @@ static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
 
+static int connection_matches_active_session(struct udscs_connection **connp,
+    void *priv)
+{
+    struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
+    const char *conn_session, *active_session;
+
+    /* Check if this connection matches the currently active session */
+    conn_session = (const char *)udscs_get_user_data(*connp);
+    active_session = console_kit_get_active_session(console_kit);
+    if (!conn_session || !active_session)
+        return 0;
+    if (strcmp(conn_session, active_session))
+        return 0;
+
+    *conn_ret = *connp;
+    return 1;
+}
+
+struct udscs_connection *get_active_session_connection(void)
+{
+    struct udscs_connection *conn = NULL;
+    int n;
+
+    n = udscs_server_for_all_clients(server, connection_matches_active_session,
+                                     (void*)&conn);
+    if (n != 1)
+        return NULL;
+
+    return conn;
+}
+
 /* vdagent virtio port handling */
 static void send_capabilities(struct vdagent_virtio_port *port,
     uint32_t request)
@@ -132,31 +163,12 @@ static void do_capabilities(struct vdagent_virtio_port *port,
         send_capabilities(port, 0);
 }
 
-static int connection_matches_active_session(struct udscs_connection **connp,
-    void *priv)
-{
-    struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
-    const char *conn_session, *active_session;
-
-    /* Check if this connection matches the currently active session */
-    conn_session = (const char *)udscs_get_user_data(*connp);
-    active_session = console_kit_get_active_session(console_kit);
-    if (!conn_session || !active_session)
-        return 0;
-    if (strcmp(conn_session, active_session))
-        return 0;
-
-    *conn_ret = *connp;
-    return 1;
-}
-
 static void do_clipboard(struct vdagent_virtio_port *port,
     VDAgentMessage *message_header, uint8_t *message_data)
 {
     uint32_t type = 0, opaque = 0, size = 0;
     uint8_t *data = NULL;
-    struct udscs_connection *conn = NULL;
-    int n;
+    struct udscs_connection *conn;
 
     switch (message_header->type) {
     case VD_AGENT_CLIPBOARD_GRAB:
@@ -183,9 +195,8 @@ static void do_clipboard(struct vdagent_virtio_port *port,
         break;
     }
 
-    n = udscs_server_for_all_clients(server, connection_matches_active_session,
-                                     (void*)&conn);
-    if (n != 1 || conn == NULL) {
+    conn = get_active_session_connection();
+    if (!conn) {
         fprintf(stderr,
                 "Could not find an agent connnection belonging to the "
                 "active session, ignoring client clipboard request\n");
