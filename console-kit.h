@@ -34,6 +34,6 @@ int console_kit_get_fd(struct console_kit *ck);
 
 const char *console_kit_get_active_session(struct console_kit *ck);
 /* Note result must be free()-ed by caller */
-const char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid);
+char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid);
 
 #endif

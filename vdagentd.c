@@ -37,6 +37,12 @@
 #include "vdagent-virtio-port.h"
 #include "console-kit.h"
 
+struct agent_data {
+    char *session;
+    int width;
+    int height;
+};
+
 /* variables */
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
@@ -53,14 +59,14 @@ static int connection_matches_active_session(struct udscs_connection **connp,
     void *priv)
 {
     struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
-    const char *conn_session, *active_session;
+    struct agent_data *agent_data = udscs_get_user_data(*connp);
+    const char *active_session;
 
     /* Check if this connection matches the currently active session */
-    conn_session = (const char *)udscs_get_user_data(*connp);
     active_session = console_kit_get_active_session(console_kit);
-    if (!conn_session || !active_session)
+    if (!agent_data->session || !active_session)
         return 0;
-    if (strcmp(conn_session, active_session))
+    if (strcmp(agent_data->session, active_session))
         return 0;
 
     *conn_ret = *connp;
@@ -271,20 +277,20 @@ size_error:
 void do_client_clipboard(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
-    const char *conn_session, *active_session;
+    const char *active_session;
+    struct agent_data *agent_data = udscs_get_user_data(conn);
 
     if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
                                  VD_AGENT_CAP_CLIPBOARD_BY_DEMAND))
         goto error;
 
-    /* Check that this client is from the currently active session */
-    conn_session = (const char *)udscs_get_user_data(conn);
+    /* Check that this agent is from the currently active session */
     active_session = console_kit_get_active_session(console_kit);
-    if (!conn_session || !active_session) {
+    if (!agent_data->session || !active_session) {
         fprintf(stderr, "Could not get session info, ignoring agent clipboard request\n");
         goto error;
     }
-    if (strcmp(conn_session, active_session)) {
+    if (strcmp(agent_data->session, active_session)) {
         fprintf(stderr, "Clipboard request from agent which is not in the active session?\n");
         goto error;
     }
@@ -340,11 +346,18 @@ error:
 void client_connect(struct udscs_connection *conn)
 {
     uint32_t pid;
-    const char *session;
+    struct agent_data *agent_data;
+    
+    agent_data = calloc(1, sizeof(*agent_data));
+    if (!agent_data) {
+        fprintf(stderr, "Out of memory allocating agent data, disconnecting\n");
+        udscs_destroy_connection(&conn);
+        return;
+    }
 
     pid = udscs_get_peer_cred(conn).pid;
-    session = console_kit_session_for_pid(console_kit, pid);
-    udscs_set_user_data(conn, (void *)session);
+    agent_data->session = console_kit_session_for_pid(console_kit, pid);
+    udscs_set_user_data(conn, (void *)agent_data);
 
     /* We don't create the tablet until we've gotten the xorg resolution
        from the vdagent client */
@@ -358,17 +371,23 @@ void client_connect(struct udscs_connection *conn)
 
 void client_disconnect(struct udscs_connection *conn)
 {
+    struct agent_data *agent_data = udscs_get_user_data(conn);
+
     connection_count--;
     if (connection_count == 0) {
         uinput_close();
         vdagent_virtio_port_destroy(&virtio_port);
     }
-    free(udscs_get_user_data(conn));
+
+    free(agent_data->session);
+    free(agent_data);
 }
 
 void client_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data)
 {
+    struct agent_data *agent_data = udscs_get_user_data(*connp);
+
     switch (header->type) {
     case VDAGENTD_GUEST_XORG_RESOLUTION: {
         struct vdagentd_guest_xorg_resolution *res =
@@ -381,6 +400,8 @@ void client_read_complete(struct udscs_connection **connp,
             return;
         }
 
+        agent_data->width  = res->width;
+        agent_data->height = res->height;
         /* Now that we know the xorg resolution setup the uinput device */
         uinput_setup(uinput, res->width, res->height);
         /* Now that we have a tablet and thus can forward mouse events,

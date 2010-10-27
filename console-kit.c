@@ -239,7 +239,7 @@ exit:
     return ck->active_session;
 }
 
-const char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid)
+char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid)
 {
     DBusError error;
     DBusMessage *message = NULL;
