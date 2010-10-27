@@ -45,6 +45,10 @@ typedef void (*udscs_connect_callback)(struct udscs_connection *conn);
    in other cases return 0. */
 typedef int (*udscs_read_callback)(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data);
+/* Callback type for udscs_server_for_all_clients. Clients can be disconnected
+   from this callback just like with a read callback. */
+typedef int (*udscs_for_all_clients_callback)(struct udscs_connection **connp,
+    void *priv);
 /* Callbacks with this type will be called when the connection is disconnected.
    Note:
    1) udscs will destroy the connection in question itself after
@@ -107,6 +111,11 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
 int udscs_server_write_all(struct udscs_server *server,
         uint32_t type, uint32_t opaque,
         const uint8_t *data, uint32_t size);
+/* Call func for all clients connected to the server, passing through
+   priv to all func calls. Returns the total of the return values from all
+   calls to func */
+int udscs_server_for_all_clients(struct udscs_server *server,
+        udscs_for_all_clients_callback func, void *priv);
 
 
 struct ucred udscs_get_peer_cred(struct udscs_connection *conn);

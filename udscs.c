@@ -431,6 +431,25 @@ int udscs_server_write_all(struct udscs_server *server,
     return 0;
 }
 
+int udscs_server_for_all_clients(struct udscs_server *server,
+    udscs_for_all_clients_callback func, void *priv)
+{
+    int r = 0;
+    struct udscs_connection *conn, *next_conn;
+
+    if (!server)
+        return 0;
+
+    conn = server->connections_head.next;
+    while (conn) {
+        /* Get next conn as func may destroy the current conn */
+        next_conn = conn->next;
+        r += func(&conn, priv);
+        conn = next_conn;
+    }
+    return r;
+}
+
 static void udscs_read_complete(struct udscs_connection **connp)
 {
     struct udscs_connection *conn = *connp;
