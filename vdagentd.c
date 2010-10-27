@@ -34,6 +34,7 @@
 #include "vdagentd-proto-strings.h"
 #include "vdagentd-uinput.h"
 #include "vdagent-virtio-port.h"
+#include "console-kit.h"
 
 /* variables */
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
@@ -42,6 +43,7 @@ static int connection_count = 0;
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
+static struct console_kit *console_kit = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
@@ -65,7 +67,8 @@ static void send_capabilities(struct vdagent_virtio_port *port,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MOUSE_STATE);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MONITORS_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
-    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
+    if (console_kit)
+        VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
 
     vdagent_virtio_port_write(port, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
@@ -128,11 +131,31 @@ static void do_capabilities(struct vdagent_virtio_port *port,
         send_capabilities(port, 0);
 }
 
+static int connection_matches_active_session(struct udscs_connection **connp,
+    void *priv)
+{
+    struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
+    const char *conn_session, *active_session;
+
+    /* Check if this connection matches the currently active session */
+    conn_session = (const char *)udscs_get_user_data(*connp);
+    active_session = console_kit_get_active_session(console_kit);
+    if (!conn_session || !active_session)
+        return 0;
+    if (strcmp(conn_session, active_session))
+        return 0;
+
+    *conn_ret = *connp;
+    return 1;
+}
+
 static void do_clipboard(struct vdagent_virtio_port *port,
     VDAgentMessage *message_header, uint8_t *message_data)
 {
     uint32_t type = 0, opaque = 0, size = 0;
     uint8_t *data = NULL;
+    struct udscs_connection *conn = NULL;
+    int n;
 
     switch (message_header->type) {
     case VD_AGENT_CLIPBOARD_GRAB:
@@ -159,8 +182,16 @@ static void do_clipboard(struct vdagent_virtio_port *port,
         break;
     }
 
-    /* FIXME send only to agent in active session */
-    udscs_server_write_all(server, type, opaque, data, size);
+    n = udscs_server_for_all_clients(server, connection_matches_active_session,
+                                     (void*)&conn);
+    if (n != 1 || conn == NULL) {
+        fprintf(stderr,
+                "Could not find an agent connnection belonging to the "
+                "active session, ignoring client clipboard request\n");
+        return;
+    }
+
+    udscs_write(conn, type, opaque, data, size);
 }
 
 int virtio_port_read_complete(
@@ -228,13 +259,23 @@ size_error:
 void do_client_clipboard(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
+    const char *conn_session, *active_session;
+
     if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
                                  VD_AGENT_CAP_CLIPBOARD_BY_DEMAND))
         goto error;
 
-    /* FIXME check that this client is from the currently active session */
-    if (0)
+    /* Check that this client is from the currently active session */
+    conn_session = (const char *)udscs_get_user_data(conn);
+    active_session = console_kit_get_active_session(console_kit);
+    if (!conn_session || !active_session) {
+        fprintf(stderr, "Could not get session info, ignoring agent clipboard request\n");
         goto error;
+    }
+    if (strcmp(conn_session, active_session)) {
+        fprintf(stderr, "Clipboard request from agent which is not in the active session?\n");
+        goto error;
+    }
 
     switch (header->type) {
     case VDAGENTD_CLIPBOARD_GRAB:
@@ -286,6 +327,13 @@ error:
 
 void client_connect(struct udscs_connection *conn)
 {
+    uint32_t pid;
+    const char *session;
+
+    pid = udscs_get_peer_cred(conn).pid;
+    session = console_kit_session_for_pid(console_kit, pid);
+    udscs_set_user_data(conn, (void *)session);
+
     /* We don't create the tablet until we've gotten the xorg resolution
        from the vdagent client */
     connection_count++;
@@ -303,6 +351,7 @@ void client_disconnect(struct udscs_connection *conn)
         uinput_close();
         vdagent_virtio_port_destroy(&virtio_port);
     }
+    free(udscs_get_user_data(conn));
 }
 
 void client_read_complete(struct udscs_connection **connp,
@@ -439,6 +488,10 @@ int main(int argc, char *argv[])
                                  debug? stderr:NULL, stderr);
     if (!server)
         exit(1);
+
+    console_kit = console_kit_create(stderr);
+    if (!console_kit)
+        fprintf(stderr, "Could not connect to console kit, disabling copy and paste support\n");
 
     if (!debug)
         daemonize();
