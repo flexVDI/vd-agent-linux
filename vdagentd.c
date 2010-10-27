@@ -46,7 +46,6 @@ struct agent_data {
 /* variables */
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput = "/dev/uinput";
-static int connection_count = 0;
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
@@ -54,7 +53,10 @@ static struct console_kit *console_kit = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
+static int uinput_width = 0;
+static int uinput_height = 0;
 
+/* utility functions */
 static int connection_matches_active_session(struct udscs_connection **connp,
     void *priv)
 {
@@ -343,6 +345,45 @@ error:
     }
 }
 
+/* When we open the vdagent virtio channel, the server automatically goes into
+   client mouse mode, so we can only have the channel open when we know the
+   active session resolution. This function checks that we have an agent in the
+   active session, and that it has told us its resolution. If these conditions
+   are met it sets the uinput tablet device's resolution and opens the virtio
+   channel (if it is not already open). If these conditions are not met, it
+   closes both. */
+static void check_xorg_resolution(void) {
+    struct udscs_connection *conn = get_active_session_connection();
+    struct agent_data *agent_data;
+
+    if (conn && (agent_data = udscs_get_user_data(conn)) && agent_data->width){
+        /* FIXME objectify uinput and let it handle all this */
+        if (agent_data->width != uinput_width || 
+            agent_data->height != uinput_height) {
+            if (uinput_width)
+                uinput_close();
+            uinput_setup(uinput, agent_data->width, agent_data->height);
+            uinput_width = agent_data->width;
+            uinput_height = agent_data->height;
+        }
+        if (!virtio_port) {
+            virtio_port = vdagent_virtio_port_create(portdev,
+                                                     virtio_port_read_complete,
+                                                     NULL);
+            if (!virtio_port)
+                exit(1);
+
+            send_capabilities(virtio_port, 1);
+        }
+    } else {
+        if (uinput_width) {
+            uinput_close();
+            uinput_width = uinput_height = 0;
+        }
+        vdagent_virtio_port_destroy(&virtio_port);
+    }
+}
+
 void client_connect(struct udscs_connection *conn)
 {
     uint32_t pid;
@@ -359,10 +400,6 @@ void client_connect(struct udscs_connection *conn)
     agent_data->session = console_kit_session_for_pid(console_kit, pid);
     udscs_set_user_data(conn, (void *)agent_data);
 
-    /* We don't create the tablet until we've gotten the xorg resolution
-       from the vdagent client */
-    connection_count++;
-
     if (mon_config)
         udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, (uint8_t *)mon_config,
                     sizeof(VDAgentMonitorsConfig) +
@@ -372,12 +409,6 @@ void client_connect(struct udscs_connection *conn)
 void client_disconnect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data = udscs_get_user_data(conn);
-
-    connection_count--;
-    if (connection_count == 0) {
-        uinput_close();
-        vdagent_virtio_port_destroy(&virtio_port);
-    }
 
     free(agent_data->session);
     free(agent_data);
@@ -402,19 +433,7 @@ void client_read_complete(struct udscs_connection **connp,
 
         agent_data->width  = res->width;
         agent_data->height = res->height;
-        /* Now that we know the xorg resolution setup the uinput device */
-        uinput_setup(uinput, res->width, res->height);
-        /* Now that we have a tablet and thus can forward mouse events,
-           we can open the vdagent virtio port. */
-        if (!virtio_port) {
-            virtio_port = vdagent_virtio_port_create(portdev,
-                                                     virtio_port_read_complete,
-                                                     NULL);
-            if (!virtio_port)
-                exit(1);
-
-            send_capabilities(virtio_port, 1);
-        }
+        check_xorg_resolution();
         break;
     }
     case VDAGENTD_CLIPBOARD_GRAB:
@@ -463,7 +482,7 @@ void daemonize(void)
 void main_loop(void)
 {
     fd_set readfds, writefds;
-    int n, nfds;
+    int n, nfds, ck_fd = 0;
 
     /* FIXME catch sigquit and set a flag to quit */
     for (;;) {
@@ -474,6 +493,12 @@ void main_loop(void)
         n = vdagent_virtio_port_fill_fds(virtio_port, &readfds, &writefds);
         if (n >= nfds)
             nfds = n + 1;
+        if (console_kit) {
+            ck_fd = console_kit_get_fd(console_kit);
+            FD_SET(ck_fd, &readfds);
+            if (ck_fd >= nfds)
+                nfds = ck_fd + 1;
+        }
 
         n = select(nfds, &readfds, &writefds, NULL, NULL);
         if (n == -1) {
@@ -485,6 +510,8 @@ void main_loop(void)
 
         udscs_server_handle_fds(server, &readfds, &writefds);
         vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
+        if (FD_ISSET(ck_fd, &readfds))
+            check_xorg_resolution();
     }
 }
 
