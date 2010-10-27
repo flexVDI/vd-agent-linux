@@ -367,6 +367,7 @@ static void check_xorg_resolution(void) {
             uinput_height = agent_data->height;
         }
         if (!virtio_port) {
+            fprintf(stderr, "opening vdagent virtio channel\n");
             virtio_port = vdagent_virtio_port_create(portdev,
                                                      virtio_port_read_complete,
                                                      NULL);
@@ -381,6 +382,7 @@ static void check_xorg_resolution(void) {
             uinput_width = uinput_height = 0;
         }
         vdagent_virtio_port_destroy(&virtio_port);
+        fprintf(stderr, "closed vdagent virtio channel\n");
     }
 }
 
