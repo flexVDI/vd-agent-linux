@@ -88,7 +88,7 @@ struct udscs_connection *get_active_session_connection(void)
     return conn;
 }
 
-/* vdagent virtio port handling */
+/* vdagentd <-> spice-client communication handling */
 static void send_capabilities(struct vdagent_virtio_port *port,
     uint32_t request)
 {
@@ -275,8 +275,8 @@ size_error:
     return 0;
 }
 
-/* vdagent client handling */
-void do_client_clipboard(struct udscs_connection *conn,
+/* vdagentd <-> vdagent communication handling */
+void do_agent_clipboard(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
     const char *active_session;
@@ -384,7 +384,7 @@ static void check_xorg_resolution(void) {
     }
 }
 
-void client_connect(struct udscs_connection *conn)
+void agent_connect(struct udscs_connection *conn)
 {
     uint32_t pid;
     struct agent_data *agent_data;
@@ -406,7 +406,7 @@ void client_connect(struct udscs_connection *conn)
                     mon_config->num_of_monitors * sizeof(VDAgentMonConfig));
 }
 
-void client_disconnect(struct udscs_connection *conn)
+void agent_disconnect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data = udscs_get_user_data(conn);
 
@@ -414,7 +414,7 @@ void client_disconnect(struct udscs_connection *conn)
     free(agent_data);
 }
 
-void client_read_complete(struct udscs_connection **connp,
+void agent_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data)
 {
     struct agent_data *agent_data = udscs_get_user_data(*connp);
@@ -426,7 +426,7 @@ void client_read_complete(struct udscs_connection **connp,
 
         if (header->size != sizeof(*res)) {
             fprintf(stderr,
-                    "guest xorg resolution message has wrong size, disconnecting client\n");
+                    "guest xorg resolution message has wrong size, disconnecting agent\n");
             udscs_destroy_connection(connp);
             return;
         }
@@ -440,10 +440,10 @@ void client_read_complete(struct udscs_connection **connp,
     case VDAGENTD_CLIPBOARD_REQUEST:
     case VDAGENTD_CLIPBOARD_DATA:
     case VDAGENTD_CLIPBOARD_RELEASE:
-        do_client_clipboard(*connp, header, data);
+        do_agent_clipboard(*connp, header, data);
         break;
     default:
-        fprintf(stderr, "unknown message from vdagent client: %u, ignoring\n",
+        fprintf(stderr, "unknown message from vdagent: %u, ignoring\n",
                 header->type);
     }
 }
@@ -453,7 +453,7 @@ void client_read_complete(struct udscs_connection **connp,
 static void usage(FILE *fp)
 {
     fprintf(fp,
-            "vdagent -- handle spice agent mouse via uinput\n"
+            "vdagentd\n"
             "options:\n"
             "  -h         print this text\n"
             "  -d         print debug messages (and don't daemonize)\n"
@@ -542,8 +542,8 @@ int main(int argc, char *argv[])
     }
 
     /* Setup communication with vdagent process(es) */
-    server = udscs_create_server(VDAGENTD_SOCKET, client_connect,
-                                 client_read_complete, client_disconnect,
+    server = udscs_create_server(VDAGENTD_SOCKET, agent_connect,
+                                 agent_read_complete, agent_disconnect,
                                  vdagentd_messages, VDAGENTD_NO_MESSAGES,
                                  debug? stderr:NULL, stderr);
     if (!server)
