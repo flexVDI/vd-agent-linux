@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <spice/vd_agent.h>
 
 #include "udscs.h"
@@ -488,6 +489,10 @@ int main(int argc, char *argv[])
                                  debug? stderr:NULL, stderr);
     if (!server)
         exit(1);
+    if (chmod(VDAGENTD_SOCKET, 0666)) {
+        fprintf(stderr, "could not change permissions on %s: %s\n",
+                VDAGENTD_SOCKET, strerror(errno));
+    }
 
     console_kit = console_kit_create(stderr);
     if (!console_kit)
