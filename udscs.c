@@ -467,10 +467,9 @@ static void udscs_read_complete(struct udscs_connection **connp)
     }
 
     if (conn->read_callback) {
-        if (conn->read_callback(conn, &conn->header, conn->data.buf) == -1) {
-            udscs_destroy_connection(connp);
+        conn->read_callback(connp, &conn->header, conn->data.buf);
+        if (!*connp) /* Was the connection disconnected by the callback ? */
             return;
-        }
     }
 
     free(conn->data.buf);

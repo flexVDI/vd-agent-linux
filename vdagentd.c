@@ -305,7 +305,7 @@ void client_disconnect(struct udscs_connection *conn)
     }
 }
 
-int client_read_complete(struct udscs_connection *conn,
+void client_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data)
 {
     switch (header->type) {
@@ -316,7 +316,8 @@ int client_read_complete(struct udscs_connection *conn,
         if (header->size != sizeof(*res)) {
             fprintf(stderr,
                     "guest xorg resolution message has wrong size, disconnecting client\n");
-            return -1;
+            udscs_destroy_connection(connp);
+            return;
         }
 
         /* Now that we know the xorg resolution setup the uinput device */
@@ -338,14 +339,12 @@ int client_read_complete(struct udscs_connection *conn,
     case VDAGENTD_CLIPBOARD_REQUEST:
     case VDAGENTD_CLIPBOARD_DATA:
     case VDAGENTD_CLIPBOARD_RELEASE:
-        do_client_clipboard(conn, header, data);
+        do_client_clipboard(*connp, header, data);
         break;
     default:
         fprintf(stderr, "unknown message from vdagent client: %u, ignoring\n",
                 header->type);
     }
-
-    return 0;
 }
 
 /* main */

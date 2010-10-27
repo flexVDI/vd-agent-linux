@@ -39,11 +39,9 @@ struct udscs_message_header {
    server is accepted. */
 typedef void (*udscs_connect_callback)(struct udscs_connection *conn);
 /* Callbacks with this type will be called when a complete message has been
-   received. Sometimes the callback may want to close the connection, in this
-   case do *not* call udscs_destroy_connection from the callback. The desire
-   to close the connection can be indicated be returning -1 from the callback,
-   in other cases return 0. */
-typedef int (*udscs_read_callback)(struct udscs_connection *conn,
+   received. The callback may call udscs_destroy_connection, in which case
+   *connp must be made NULL (which udscs_destroy_connection takes care of) */
+typedef void (*udscs_read_callback)(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data);
 /* Callback type for udscs_server_for_all_clients. Clients can be disconnected
    from this callback just like with a read callback. */

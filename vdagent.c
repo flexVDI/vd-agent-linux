@@ -35,7 +35,7 @@
 static int verbose = 0;
 static struct vdagent_x11 *x11 = NULL;
 
-int daemon_read_complete(struct udscs_connection *conn,
+void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data)
 {
     switch (header->type) {
@@ -60,7 +60,6 @@ int daemon_read_complete(struct udscs_connection *conn,
             fprintf(stderr, "Unknown message from vdagentd type: %d\n",
                     header->type);
     }
-    return 0;
 }
 
 static void usage(FILE *fp)
