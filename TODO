@@ -1,4 +1,3 @@
--release keyboard when owned by agent and active session changes
 -patch xorg driver to allow adding "random" resolutions
 -make vdagent xorg client try to add "random" resolutions
 -fedora package

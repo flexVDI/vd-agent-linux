@@ -57,6 +57,7 @@ static int uinput_width = 0;
 static int uinput_height = 0;
 static const char *active_session = NULL;
 static struct udscs_connection *active_session_conn = NULL;
+static int agent_owns_clipboard = 0;
 
 /* utility functions */
 /* vdagentd <-> spice-client communication handling */
@@ -148,11 +149,19 @@ static void do_client_clipboard(struct vdagent_virtio_port *port,
     uint32_t type = 0, opaque = 0, size = 0;
     uint8_t *data = NULL;
 
+    if (!active_session_conn) {
+        fprintf(stderr,
+                "Could not find an agent connnection belonging to the "
+                "active session, ignoring client clipboard request\n");
+        return;
+    }
+
     switch (message_header->type) {
     case VD_AGENT_CLIPBOARD_GRAB:
         type = VDAGENTD_CLIPBOARD_GRAB;
         data = message_data;
         size = message_header->size;
+        agent_owns_clipboard = 0;
         break;
     case VD_AGENT_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
@@ -171,13 +180,6 @@ static void do_client_clipboard(struct vdagent_virtio_port *port,
     case VD_AGENT_CLIPBOARD_RELEASE:
         type = VDAGENTD_CLIPBOARD_RELEASE;
         break;
-    }
-
-    if (!active_session_conn) {
-        fprintf(stderr,
-                "Could not find an agent connnection belonging to the "
-                "active session, ignoring client clipboard request\n");
-        return;
     }
 
     udscs_write(active_session_conn, type, opaque, data, size);
@@ -263,6 +265,7 @@ void do_agent_clipboard(struct udscs_connection *conn,
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_GRAB, 0,
                                   data, header->size);
+        agent_owns_clipboard = 1;
         break;
     case VDAGENTD_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest req = { .type = header->opaque };
@@ -293,6 +296,7 @@ void do_agent_clipboard(struct udscs_connection *conn,
     case VDAGENTD_CLIPBOARD_RELEASE:
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
+        agent_owns_clipboard = 0;
         break;
     }
 
@@ -376,6 +380,12 @@ void update_active_session_connection(void)
         return;
 
     active_session_conn = new_conn;
+
+    if (agent_owns_clipboard) {
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
+        agent_owns_clipboard = 0;
+    }
 
     check_xorg_resolution();    
 }
