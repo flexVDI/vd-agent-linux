@@ -21,10 +21,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <spice/vd_agent.h>
 
 #include "udscs.h"
@@ -34,6 +36,7 @@
 
 static int verbose = 0;
 static struct vdagent_x11 *x11 = NULL;
+static FILE *logfile = NULL;
 
 void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data)
@@ -57,7 +60,7 @@ void daemon_read_complete(struct udscs_connection **connp,
         break;
     default:
         if (verbose)
-            fprintf(stderr, "Unknown message from vdagentd type: %d\n",
+            fprintf(logfile, "Unknown message from vdagentd type: %d\n",
                     header->type);
     }
 }
@@ -67,8 +70,8 @@ static void usage(FILE *fp)
     fprintf(fp,
             "vdagent -- spice agent xorg client\n"
             "options:\n"
-            "  -h         print this text\n"
-            "  -d         print debug messages\n");
+            "  -h    print this text\n"
+            "  -d    log debug messages\n");
 }
 
 int main(int argc, char *argv[])
@@ -76,6 +79,7 @@ int main(int argc, char *argv[])
     struct udscs_connection *client = NULL;
     fd_set readfds, writefds;
     int c, n, nfds, x11_fd;
+    char *home, filename[1024];
 
     for (;;) {
         if (-1 == (c = getopt(argc, argv, "-dh")))
@@ -93,13 +97,29 @@ int main(int argc, char *argv[])
         }
     }
 
+    home = getenv("HOME");
+    if (home) {
+        snprintf(filename, sizeof(filename), "%s/.spice-agent", home);
+        n = mkdir(filename, 0755);
+        snprintf(filename, sizeof(filename), "%s/.spice-agent/log", home);
+        logfile = fopen(filename, "w");
+        if (!logfile) {
+            fprintf(stderr, "Error opening %s: %s\n", filename,
+                    strerror(errno));
+            logfile = stderr;
+        }
+    } else {
+        fprintf(stderr, "Could not get home directory, logging to stderr\n");
+        logfile = stderr;
+    }
+
     client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
                            vdagentd_messages, VDAGENTD_NO_MESSAGES,
-                           verbose? stderr:NULL, stderr);
+                           verbose? logfile:NULL, logfile);
     if (!client)
         exit(1);
 
-    x11 = vdagent_x11_create(client, stderr, verbose);
+    x11 = vdagent_x11_create(client, logfile, verbose);
     if (!x11) {
         udscs_destroy_connection(&client);
         exit(1);
@@ -126,9 +146,11 @@ int main(int argc, char *argv[])
         if (FD_ISSET(x11_fd, &readfds))
             vdagent_x11_do_read(x11);
         udscs_client_handle_fds(&client, &readfds, &writefds);
+        fflush(logfile);
     }
 
     vdagent_x11_destroy(x11);
+    fclose(logfile);
 
     return 0;
 }
