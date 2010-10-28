@@ -377,6 +377,8 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
     unsigned long len, remain;
     unsigned char *data = NULL;
 
+    *data_ret = NULL;
+
     if (incr) {
         if (event->xproperty.atom != prop) {
             fprintf(stderr, "PropertyNotify parameters mismatch\n");
@@ -491,10 +493,12 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
     } else
         *data_ret = data;
 
-    if (len > 0)
+    if (len > 0) {
         ret_val = len;
-    else
+    } else {
         fprintf(stderr, "property contains no data (zero length)\n");
+        *data_ret = NULL;
+    }
 
 exit:
     if ((incr || ret_val == -1) && data)
