@@ -22,13 +22,14 @@
 #ifndef __VDAGENT_H
 #define __VDAGENT_H
 
+#include <stdio.h>
 #include <spice/vd_agent.h>
 #include "udscs.h"
 
 struct vdagent_x11;
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
-    int verbose);
+    FILE *errfile, int verbose);
 void vdagent_x11_destroy(struct vdagent_x11 *x11);
 
 int  vdagent_x11_get_fd(struct vdagent_x11 *x11);

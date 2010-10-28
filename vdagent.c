@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     if (!client)
         exit(1);
 
-    x11 = vdagent_x11_create(client, verbose);
+    x11 = vdagent_x11_create(client, stderr, verbose);
     if (!x11) {
         udscs_destroy_connection(&client);
         exit(1);
