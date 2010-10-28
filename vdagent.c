@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 {
     struct udscs_connection *client = NULL;
     fd_set readfds, writefds;
-    int c, n, nfds, x11_fd;
+    int c, n, nfds, x11_fd, retval = 0;
     char *home, filename[1024];
 
     for (;;) {
@@ -90,10 +90,10 @@ int main(int argc, char *argv[])
             break;
         case 'h':
             usage(stdout);
-            exit(0);
+            return 0;
         default:
             usage(stderr);
-            exit(1);
+            return 1;
         }
     }
 
@@ -117,12 +117,12 @@ int main(int argc, char *argv[])
                            vdagentd_messages, VDAGENTD_NO_MESSAGES,
                            verbose? logfile:NULL, logfile);
     if (!client)
-        exit(1);
+        return 1;
 
     x11 = vdagent_x11_create(client, logfile, verbose);
     if (!x11) {
         udscs_destroy_connection(&client);
-        exit(1);
+        return 1;
     }
 
     while (client) {
@@ -139,8 +139,9 @@ int main(int argc, char *argv[])
         if (n == -1) {
             if (errno == EINTR)
                 continue;
-            perror("select");
-            exit(1);
+            fprintf(logfile, "Fatal error select: %s\n", strerror(errno));
+            retval = 1;
+            break;
         }
 
         if (FD_ISSET(x11_fd, &readfds))
@@ -150,7 +151,8 @@ int main(int argc, char *argv[])
     }
 
     vdagent_x11_destroy(x11);
+    udscs_destroy_connection(&client);
     fclose(logfile);
 
-    return 0;
+    return retval;
 }
