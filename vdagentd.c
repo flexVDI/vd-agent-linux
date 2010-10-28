@@ -59,6 +59,8 @@ static const char *active_session = NULL;
 static struct udscs_connection *active_session_conn = NULL;
 static int agent_owns_clipboard = 0;
 static FILE *logfile = NULL;
+static int quit = 0;
+static int retval = 0;
 
 /* utility functions */
 /* vdagentd <-> spice-client communication handling */
@@ -204,8 +206,19 @@ int virtio_port_read_complete(
             goto size_error;
         vdagentd_uinput_do_mouse(&uinput, (VDAgentMouseState *)data);
         if (!uinput) {
-            fprintf(logfile, "Fatal uinput error\n");
-            exit(1);
+            /* Try to re-open the tablet */
+            struct agent_data *agent_data =
+                udscs_get_user_data(active_session_conn);
+            if (agent_data)
+                uinput = vdagentd_uinput_create(uinput_device,
+                                                agent_data->width,
+                                                agent_data->height,
+                                                logfile, debug > 1);
+            if (!uinput) {
+                fprintf(logfile, "Fatal uinput error\n");
+                retval = 1;
+                quit = 1;
+            }
         }
         break;
     case VD_AGENT_MONITORS_CONFIG:
@@ -260,7 +273,14 @@ void do_agent_clipboard(struct udscs_connection *conn,
 
     /* Check that this agent is from the currently active session */
     if (conn != active_session_conn) {
-        fprintf(logfile, "Clipboard request from agent which is not in the active session?\n");
+        fprintf(logfile, "Clipboard request from agent "
+                         "which is not in the active session?\n");
+        goto error;
+    }
+    
+    if (!virtio_port) {
+        fprintf(logfile,
+                "Clipboard request from agent but no client connection\n");
         goto error;
     }
 
@@ -335,7 +355,8 @@ static void check_xorg_resolution(void) {
                                         agent_data->height);
         if (!uinput) {
             fprintf(logfile, "Fatal uinput error\n");
-            exit(1);
+            retval = 1;
+            quit = 1;
         }
 
         if (!virtio_port) {
@@ -344,8 +365,11 @@ static void check_xorg_resolution(void) {
                                                      virtio_port_read_complete,
                                                      NULL, logfile);
             if (!virtio_port) {
-                fprintf(logfile, "Fatal error opening vdagent virtio channel\n");
-                exit(1);
+                fprintf(logfile,
+                        "Fatal error opening vdagent virtio channel\n");
+                retval = 1;
+                quit = 1;
+                return;
             }
             send_capabilities(virtio_port, 1);
         }
@@ -390,11 +414,10 @@ void update_active_session_connection(void)
 
     active_session_conn = new_conn;
 
-    if (agent_owns_clipboard) {
+    if (agent_owns_clipboard && virtio_port)
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
-        agent_owns_clipboard = 0;
-    }
+    agent_owns_clipboard = 0;
 
     check_xorg_resolution();    
 }
@@ -486,16 +509,16 @@ void daemonize(void)
 {
     /* detach from terminal */
     switch (fork()) {
-    case -1:
-        fprintf(logfile, "fork: %s\n", strerror(errno));
-        exit(1);
     case 0:
         close(0); close(1); close(2);
         setsid();
         open("/dev/null",O_RDWR); dup(0); dup(0);
         break;
+    case -1:
+        fprintf(logfile, "fork: %s\n", strerror(errno));
+        retval = 1;
     default:
-        exit(0);
+        quit = 1;
     }
 }
 
@@ -505,7 +528,7 @@ void main_loop(void)
     int n, nfds, ck_fd = 0;
 
     /* FIXME catch sigquit and set a flag to quit */
-    for (;;) {
+    while (!quit) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
@@ -523,19 +546,38 @@ void main_loop(void)
         if (n == -1) {
             if (errno == EINTR)
                 continue;
-            fprintf(logfile, "select: %s\n", strerror(errno));
-            exit(1);
+            fprintf(logfile, "Fatal error select: %s\n", strerror(errno));
+            retval = 1;
+            break;
         }
 
         udscs_server_handle_fds(server, &readfds, &writefds);
-        vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
+
+        if (virtio_port) {
+            vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
+            if (!virtio_port) {
+                fprintf(logfile,
+                        "AIIEEE lost spice client connection, reconnecting\n");
+                virtio_port = vdagent_virtio_port_create(portdev,
+                                                     virtio_port_read_complete,
+                                                     NULL, logfile);
+            }
+            if (!virtio_port) {
+                fprintf(logfile,
+                        "Fatal error opening vdagent virtio channel\n");
+                retval = 1;
+                break;
+            }
+        }
+
         if (FD_ISSET(ck_fd, &readfds)) {
             active_session = console_kit_get_active_session(console_kit);
             update_active_session_connection();
             check_xorg_resolution();
             if (!active_session) {
                 fprintf(logfile, "Fatal error: could not get active session\n");
-                exit(1);
+                retval = 1;
+                break;
             }
         }
         fflush(logfile);
@@ -565,10 +607,10 @@ int main(int argc, char *argv[])
             break;
         case 'h':
             usage(stdout);
-            exit(0);
+            return 0;
         default:
             usage(stderr);
-            exit(1);
+            return 1;
         }
     }
 
@@ -587,28 +629,49 @@ int main(int argc, char *argv[])
                                  agent_read_complete, agent_disconnect,
                                  vdagentd_messages, VDAGENTD_NO_MESSAGES,
                                  debug? logfile:NULL, logfile);
-    if (!server)
-        exit(1);
+    if (!server) {
+        fprintf(logfile, "Fatal could not create server socket %s\n",
+                VDAGENTD_SOCKET);
+        return 1;
+    }
     if (chmod(VDAGENTD_SOCKET, 0666)) {
-        fprintf(logfile, "could not change permissions on %s: %s\n",
+        fprintf(logfile, "Fatal could not change permissions on %s: %s\n",
                 VDAGENTD_SOCKET, strerror(errno));
+        udscs_destroy_server(server);
+        return 1;
     }
 
     console_kit = console_kit_create(logfile);
-    if (!console_kit)
-        exit(1);
+    if (!console_kit) {
+        fprintf(logfile, "Fatal could not connect to console kit\n");
+        udscs_destroy_server(server);
+        return 1;
+    }
     active_session = console_kit_get_active_session(console_kit);
-    if (!active_session)
-        exit(1);
+    if (!active_session) {
+        fprintf(logfile, "Fatal could not get active session\n");
+        console_kit_destroy(console_kit);
+        udscs_destroy_server(server);
+        return 1;
+    }
 
     if (do_daemonize)
         daemonize();
 
     main_loop();
 
+    if (agent_owns_clipboard && virtio_port)
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
+
+    vdagentd_uinput_destroy(&uinput);
+    vdagent_virtio_port_flush(&virtio_port);
+    vdagent_virtio_port_destroy(&virtio_port);
+    console_kit_destroy(console_kit);
     udscs_destroy_server(server);
+    fprintf(logfile, "vdagentd quiting, returning status %d\n", retval);
     if (logfile != stderr)
         fclose(logfile);
 
-    return 0;
+    return retval;
 }

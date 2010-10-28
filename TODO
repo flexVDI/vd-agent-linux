@@ -1,7 +1,7 @@
+-remove excess check_xorg_res call
 -patch xorg driver to allow adding "random" resolutions
 -make vdagent xorg client try to add "random" resolutions
 -fedora package
--file or syslog logging
 -only realloc capabilities array if size changes
 
 Maybe:
