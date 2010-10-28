@@ -573,7 +573,6 @@ void main_loop(void)
         if (FD_ISSET(ck_fd, &readfds)) {
             active_session = console_kit_get_active_session(console_kit);
             update_active_session_connection();
-            check_xorg_resolution();
             if (!active_session) {
                 fprintf(logfile, "Fatal error: could not get active session\n");
                 retval = 1;
