@@ -351,9 +351,11 @@ static void check_xorg_resolution(void) {
         }
     } else {
         vdagentd_uinput_destroy(&uinput);
-        vdagent_virtio_port_flush(&virtio_port);
-        vdagent_virtio_port_destroy(&virtio_port);
-        fprintf(logfile, "closed vdagent virtio channel\n");
+        if (virtio_port) {
+            vdagent_virtio_port_flush(&virtio_port);
+            vdagent_virtio_port_destroy(&virtio_port);
+            fprintf(logfile, "closed vdagent virtio channel\n");
+        }
     }
 }
 
