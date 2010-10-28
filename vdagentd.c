@@ -45,16 +45,15 @@ struct agent_data {
 
 /* variables */
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
-static const char *uinput = "/dev/uinput";
+static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
 static struct console_kit *console_kit = NULL;
+static struct vdagentd_uinput *uinput = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
-static int uinput_width = 0;
-static int uinput_height = 0;
 static const char *active_session = NULL;
 static struct udscs_connection *active_session_conn = NULL;
 static int agent_owns_clipboard = 0;
@@ -201,7 +200,11 @@ int virtio_port_read_complete(
     case VD_AGENT_MOUSE_STATE:
         if (message_header->size != sizeof(VDAgentMouseState))
             goto size_error;
-        uinput_do_mouse((VDAgentMouseState *)data, debug > 1);
+        vdagentd_uinput_do_mouse(&uinput, (VDAgentMouseState *)data);
+        if (!uinput) {
+            fprintf(stderr, "Fatal uinput error\n");
+            exit(1);
+        }
         break;
     case VD_AGENT_MONITORS_CONFIG:
         if (message_header->size < sizeof(VDAgentMonitorsConfig))
@@ -320,30 +323,32 @@ static void check_xorg_resolution(void) {
     struct agent_data *agent_data = udscs_get_user_data(active_session_conn);
 
     if (agent_data && agent_data->width) {
-        /* FIXME objectify uinput and let it handle all this */
-        if (agent_data->width != uinput_width || 
-            agent_data->height != uinput_height) {
-            if (uinput_width)
-                uinput_close();
-            uinput_setup(uinput, agent_data->width, agent_data->height);
-            uinput_width = agent_data->width;
-            uinput_height = agent_data->height;
+        if (!uinput)
+            uinput = vdagentd_uinput_create(uinput_device,
+                                            agent_data->width,
+                                            agent_data->height,
+                                            stderr, debug > 1);
+        else
+            vdagentd_uinput_update_size(&uinput, agent_data->width,
+                                        agent_data->height);
+        if (!uinput) {
+            fprintf(stderr, "Fatal uinput error\n");
+            exit(1);
         }
+
         if (!virtio_port) {
             fprintf(stderr, "opening vdagent virtio channel\n");
             virtio_port = vdagent_virtio_port_create(portdev,
                                                      virtio_port_read_complete,
                                                      NULL);
-            if (!virtio_port)
+            if (!virtio_port) {
+                fprintf(stderr, "Fatal error opening vdagent virtio channel\n");
                 exit(1);
-
+            }
             send_capabilities(virtio_port, 1);
         }
     } else {
-        if (uinput_width) {
-            uinput_close();
-            uinput_width = uinput_height = 0;
-        }
+        vdagentd_uinput_destroy(&uinput);
         vdagent_virtio_port_flush(&virtio_port);
         vdagent_virtio_port_destroy(&virtio_port);
         fprintf(stderr, "closed vdagent virtio channel\n");
@@ -469,7 +474,7 @@ static void usage(FILE *fp)
             "  -d         print debug messages (and don't daemonize)\n"
             "  -s <port>  set virtio serial port  [%s]\n"
             "  -u <dev>   set uinput device       [%s]\n",
-            portdev, uinput);
+            portdev, uinput_device);
 }
 
 void daemonize(void)
@@ -546,7 +551,7 @@ int main(int argc, char *argv[])
             portdev = optarg;
             break;
         case 'u':
-            uinput = optarg;
+            uinput_device = optarg;
             break;
         case 'h':
             usage(stdout);

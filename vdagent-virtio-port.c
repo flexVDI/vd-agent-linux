@@ -191,8 +191,6 @@ int vdagent_virtio_port_write(
 
 void vdagent_virtio_port_flush(struct vdagent_virtio_port **portp)
 {
-    struct vdagent_virtio_port *port = *portp;
-
     while (*portp && (*portp)->write_buf)
         vdagent_virtio_port_do_write(portp);
 }

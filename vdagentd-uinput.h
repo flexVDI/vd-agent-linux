@@ -22,8 +22,17 @@
 #ifndef __VDAGENTD_UINPUT_H
 #define __VDAGENTD_UINPUT_H
 
-void uinput_setup(const char *uinput_devname, int width, int height);
-void uinput_close(void);
-void uinput_do_mouse(VDAgentMouseState *mouse, int verbose);
+#include <stdio.h>
+
+struct vdagentd_uinput;
+
+struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
+        int width, int height, FILE *errfile, int verbose);
+void vdagentd_uinput_destroy(struct vdagentd_uinput **uinputp);
+
+void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,
+        VDAgentMouseState *mouse);
+void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
+        int width, int height);
 
 #endif
