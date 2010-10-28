@@ -79,8 +79,7 @@ static void send_capabilities(struct vdagent_virtio_port *port,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MOUSE_STATE);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MONITORS_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
-    if (console_kit)
-        VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
 
     vdagent_virtio_port_write(port, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
@@ -504,12 +503,11 @@ void main_loop(void)
         n = vdagent_virtio_port_fill_fds(virtio_port, &readfds, &writefds);
         if (n >= nfds)
             nfds = n + 1;
-        if (console_kit) {
-            ck_fd = console_kit_get_fd(console_kit);
-            FD_SET(ck_fd, &readfds);
-            if (ck_fd >= nfds)
-                nfds = ck_fd + 1;
-        }
+
+        ck_fd = console_kit_get_fd(console_kit);
+        FD_SET(ck_fd, &readfds);
+        if (ck_fd >= nfds)
+            nfds = ck_fd + 1;
 
         n = select(nfds, &readfds, &writefds, NULL, NULL);
         if (n == -1) {
@@ -525,6 +523,10 @@ void main_loop(void)
             active_session = console_kit_get_active_session(console_kit);
             update_active_session_connection();
             check_xorg_resolution();
+            if (!active_session) {
+                fprintf(stderr, "Fatal error: could not get active session\n");
+                exit(1);
+            }
         }
     }
 }
@@ -569,8 +571,10 @@ int main(int argc, char *argv[])
 
     console_kit = console_kit_create(stderr);
     if (!console_kit)
-        fprintf(stderr, "Could not connect to console kit, disabling copy and paste support\n");
+        exit(1);
     active_session = console_kit_get_active_session(console_kit);
+    if (!active_session)
+        exit(1);
 
     if (!debug)
         daemonize();
