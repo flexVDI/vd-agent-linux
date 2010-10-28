@@ -20,7 +20,6 @@
 */
 
 #include <errno.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -38,6 +37,7 @@ struct vdagent_virtio_port_buf {
 
 struct vdagent_virtio_port {
     int fd;
+    FILE *errfile;
 
     /* Read stuff, single buffer, separate header and data buffer */
     int chunk_header_read;
@@ -63,7 +63,8 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **portp);
 
 struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
     vdagent_virtio_port_read_callback read_callback,
-    vdagent_virtio_port_disconnect_callback disconnect_callback)
+    vdagent_virtio_port_disconnect_callback disconnect_callback,
+    FILE *errfile)
 {
     struct vdagent_virtio_port *port;
 
@@ -71,9 +72,10 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
     if (!port)
         return 0;
 
+    port->errfile = errfile;
     port->fd = open(portname, O_RDWR);
     if (port->fd == -1) {
-        fprintf(stderr, "open %s: %s\n", portname, strerror(errno));
+        fprintf(port->errfile, "open %s: %s\n", portname, strerror(errno));
         free(port);
         return NULL;
     }    
@@ -209,7 +211,7 @@ static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **portp)
                 port->message_header.size) {
             port->message_data = malloc(port->message_header.size);
             if (!port->message_data) {
-                fprintf(stderr, "out of memory, disconnecting virtio\n");
+                fprintf(port->errfile, "out of memory, disconnecting virtio\n");
                 vdagent_virtio_port_destroy(portp);
                 return;
             }
@@ -222,7 +224,7 @@ static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **portp)
         avail = port->chunk_header.size - pos;
 
         if (avail > read) {
-            fprintf(stderr, "chunk larger then message, lost sync?\n");
+            fprintf(port->errfile, "chunk larger then message, lost sync?\n");
             vdagent_virtio_port_destroy(portp);
             return;
         }
@@ -272,7 +274,8 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **portp)
     if (n < 0) {
         if (errno == EINTR)
             return;
-        perror("reading from vdagent virtio port");
+        fprintf(port->errfile, "reading from vdagent virtio port: %s\n",
+                strerror(errno));
     }
     if (n <= 0) {
         vdagent_virtio_port_destroy(portp);
@@ -283,7 +286,7 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **portp)
         port->chunk_header_read += n;
         if (port->chunk_header_read == sizeof(port->chunk_header)) {
             if (port->chunk_header.size > VD_AGENT_MAX_DATA_SIZE) {
-                fprintf(stderr, "chunk size too large\n");
+                fprintf(port->errfile, "chunk size too large\n");
                 vdagent_virtio_port_destroy(portp);
                 return;
             }
@@ -306,7 +309,7 @@ static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **portp)
 
     struct vdagent_virtio_port_buf* wbuf = port->write_buf;
     if (!wbuf) {
-        fprintf(stderr,
+        fprintf(port->errfile,
                 "do_write called on a port without a write buf ?!\n");
         return;
     }
@@ -316,7 +319,8 @@ static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **portp)
     if (n < 0) {
         if (errno == EINTR)
             return;
-        perror("writing to vdagent virtio port");
+        fprintf(port->errfile, "writing to vdagent virtio port: %s\n",
+                strerror(errno));
         vdagent_virtio_port_destroy(portp);
         return;
     }

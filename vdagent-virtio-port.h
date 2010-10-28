@@ -22,6 +22,7 @@
 #ifndef __VIRTIO_PORT_H
 #define __VIRTIO_PORT_H
 
+#include <stdio.h>
 #include <stdint.h>
 #include <sys/select.h>
 #include <spice/vd_agent.h>
@@ -53,7 +54,8 @@ typedef void (*vdagent_virtio_port_disconnect_callback)(
 /* Create a vdagent virtio port object for port portname */
 struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
     vdagent_virtio_port_read_callback read_callback,
-    vdagent_virtio_port_disconnect_callback disconnect_callback);
+    vdagent_virtio_port_disconnect_callback disconnect_callback,
+    FILE *errfile);
     
 /* The contents of portp will be made NULL */
 void vdagent_virtio_port_destroy(struct vdagent_virtio_port **portp);

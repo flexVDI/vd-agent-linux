@@ -340,7 +340,7 @@ static void check_xorg_resolution(void) {
             fprintf(stderr, "opening vdagent virtio channel\n");
             virtio_port = vdagent_virtio_port_create(portdev,
                                                      virtio_port_read_complete,
-                                                     NULL);
+                                                     NULL, stderr);
             if (!virtio_port) {
                 fprintf(stderr, "Fatal error opening vdagent virtio channel\n");
                 exit(1);
