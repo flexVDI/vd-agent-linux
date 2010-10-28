@@ -536,7 +536,7 @@ int main(int argc, char *argv[])
     int c;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "dhx:y:s:u:")))
+        if (-1 == (c = getopt(argc, argv, "-dhx:y:s:u:")))
             break;
         switch (c) {
         case 'd':

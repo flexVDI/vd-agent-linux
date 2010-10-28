@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
     int c, n, nfds, x11_fd;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "dh")))
+        if (-1 == (c = getopt(argc, argv, "-dh")))
             break;
         switch (c) {
         case 'd':
