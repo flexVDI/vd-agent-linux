@@ -164,7 +164,9 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         x11->has_xfixes = 1;
         XFixesSelectSelectionInput(x11->display, x11->root_window,
                                    x11->clipboard_atom,
-                                   XFixesSetSelectionOwnerNotifyMask);
+                                   XFixesSetSelectionOwnerNotifyMask|
+                                   XFixesSelectionWindowDestroyNotifyMask|
+                                   XFixesSelectionClientCloseNotifyMask);
     } else
         fprintf(stderr, "no xfixes, no guest -> client copy paste support\n");
 
@@ -234,7 +236,15 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
         } ev;
 
         ev.ev = event;
-        if (ev.xfev.subtype != XFixesSetSelectionOwnerNotify) {
+        switch (ev.xfev.subtype) {
+        case XFixesSetSelectionOwnerNotify:
+            break;
+        /* Treat ... as a SelectionOwnerNotify None */
+        case XFixesSelectionWindowDestroyNotify:
+        case XFixesSelectionClientCloseNotify:
+            ev.xfev.owner = None;
+            break;
+        default:
             if (x11->verbose)
                 fprintf(stderr, "unexpected xfix event subtype %d window %d\n",
                         (int)ev.xfev.subtype, (int)event.xany.window);
