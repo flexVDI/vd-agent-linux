@@ -85,4 +85,6 @@ int vdagent_virtio_port_write(
         const uint8_t *data,
         uint32_t data_size);
 
+void vdagent_virtio_port_flush(struct vdagent_virtio_port **portp);
+
 #endif

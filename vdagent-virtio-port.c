@@ -189,6 +189,14 @@ int vdagent_virtio_port_write(
     return 0;
 }
 
+void vdagent_virtio_port_flush(struct vdagent_virtio_port **portp)
+{
+    struct vdagent_virtio_port *port = *portp;
+
+    while (*portp && (*portp)->write_buf)
+        vdagent_virtio_port_do_write(portp);
+}
+
 static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **portp)
 {
     int avail, read, pos = 0;

@@ -345,6 +345,7 @@ static void check_xorg_resolution(void) {
             uinput_close();
             uinput_width = uinput_height = 0;
         }
+        vdagent_virtio_port_flush(&virtio_port);
         vdagent_virtio_port_destroy(&virtio_port);
         fprintf(stderr, "closed vdagent virtio channel\n");
     }
