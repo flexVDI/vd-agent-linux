@@ -55,6 +55,7 @@ static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
 static int uinput_width = 0;
 static int uinput_height = 0;
+static const char *active_session = NULL;
 
 /* utility functions */
 static int connection_matches_active_session(struct udscs_connection **connp,
@@ -62,10 +63,8 @@ static int connection_matches_active_session(struct udscs_connection **connp,
 {
     struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
     struct agent_data *agent_data = udscs_get_user_data(*connp);
-    const char *active_session;
 
     /* Check if this connection matches the currently active session */
-    active_session = console_kit_get_active_session(console_kit);
     if (!agent_data->session || !active_session)
         return 0;
     if (strcmp(agent_data->session, active_session))
@@ -279,7 +278,6 @@ size_error:
 void do_agent_clipboard(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
-    const char *active_session;
     struct agent_data *agent_data = udscs_get_user_data(conn);
 
     if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
@@ -287,7 +285,6 @@ void do_agent_clipboard(struct udscs_connection *conn,
         goto error;
 
     /* Check that this agent is from the currently active session */
-    active_session = console_kit_get_active_session(console_kit);
     if (!agent_data->session || !active_session) {
         fprintf(stderr, "Could not get session info, ignoring agent clipboard request\n");
         goto error;
@@ -512,8 +509,10 @@ void main_loop(void)
 
         udscs_server_handle_fds(server, &readfds, &writefds);
         vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
-        if (FD_ISSET(ck_fd, &readfds))
+        if (FD_ISSET(ck_fd, &readfds)) {
+            active_session = console_kit_get_active_session(console_kit);
             check_xorg_resolution();
+        }
     }
 }
 
@@ -558,6 +557,7 @@ int main(int argc, char *argv[])
     console_kit = console_kit_create(stderr);
     if (!console_kit)
         fprintf(stderr, "Could not connect to console kit, disabling copy and paste support\n");
+    active_session = console_kit_get_active_session(console_kit);
 
     if (!debug)
         daemonize();
