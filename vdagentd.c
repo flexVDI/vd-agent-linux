@@ -56,37 +56,9 @@ static int capabilities_size = 0;
 static int uinput_width = 0;
 static int uinput_height = 0;
 static const char *active_session = NULL;
+static struct udscs_connection *active_session_conn = NULL;
 
 /* utility functions */
-static int connection_matches_active_session(struct udscs_connection **connp,
-    void *priv)
-{
-    struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
-    struct agent_data *agent_data = udscs_get_user_data(*connp);
-
-    /* Check if this connection matches the currently active session */
-    if (!agent_data->session || !active_session)
-        return 0;
-    if (strcmp(agent_data->session, active_session))
-        return 0;
-
-    *conn_ret = *connp;
-    return 1;
-}
-
-struct udscs_connection *get_active_session_connection(void)
-{
-    struct udscs_connection *conn = NULL;
-    int n;
-
-    n = udscs_server_for_all_clients(server, connection_matches_active_session,
-                                     (void*)&conn);
-    if (n != 1)
-        return NULL;
-
-    return conn;
-}
-
 /* vdagentd <-> spice-client communication handling */
 static void send_capabilities(struct vdagent_virtio_port *port,
     uint32_t request)
@@ -175,7 +147,6 @@ static void do_clipboard(struct vdagent_virtio_port *port,
 {
     uint32_t type = 0, opaque = 0, size = 0;
     uint8_t *data = NULL;
-    struct udscs_connection *conn;
 
     switch (message_header->type) {
     case VD_AGENT_CLIPBOARD_GRAB:
@@ -202,15 +173,14 @@ static void do_clipboard(struct vdagent_virtio_port *port,
         break;
     }
 
-    conn = get_active_session_connection();
-    if (!conn) {
+    if (!active_session_conn) {
         fprintf(stderr,
                 "Could not find an agent connnection belonging to the "
                 "active session, ignoring client clipboard request\n");
         return;
     }
 
-    udscs_write(conn, type, opaque, data, size);
+    udscs_write(active_session_conn, type, opaque, data, size);
 }
 
 int virtio_port_read_complete(
@@ -278,18 +248,12 @@ size_error:
 void do_agent_clipboard(struct udscs_connection *conn,
     struct udscs_message_header *header, const uint8_t *data)
 {
-    struct agent_data *agent_data = udscs_get_user_data(conn);
-
     if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
                                  VD_AGENT_CAP_CLIPBOARD_BY_DEMAND))
         goto error;
 
     /* Check that this agent is from the currently active session */
-    if (!agent_data->session || !active_session) {
-        fprintf(stderr, "Could not get session info, ignoring agent clipboard request\n");
-        goto error;
-    }
-    if (strcmp(agent_data->session, active_session)) {
+    if (conn != active_session_conn) {
         fprintf(stderr, "Clipboard request from agent which is not in the active session?\n");
         goto error;
     }
@@ -350,10 +314,9 @@ error:
    channel (if it is not already open). If these conditions are not met, it
    closes both. */
 static void check_xorg_resolution(void) {
-    struct udscs_connection *conn = get_active_session_connection();
-    struct agent_data *agent_data;
+    struct agent_data *agent_data = udscs_get_user_data(active_session_conn);
 
-    if (conn && (agent_data = udscs_get_user_data(conn)) && agent_data->width){
+    if (agent_data && agent_data->width) {
         /* FIXME objectify uinput and let it handle all this */
         if (agent_data->width != uinput_width || 
             agent_data->height != uinput_height) {
@@ -383,6 +346,40 @@ static void check_xorg_resolution(void) {
     }
 }
 
+static int connection_matches_active_session(struct udscs_connection **connp,
+    void *priv)
+{
+    struct udscs_connection **conn_ret = (struct udscs_connection **)priv;
+    struct agent_data *agent_data = udscs_get_user_data(*connp);
+
+    /* Check if this connection matches the currently active session */
+    if (!agent_data->session || !active_session)
+        return 0;
+    if (strcmp(agent_data->session, active_session))
+        return 0;
+
+    *conn_ret = *connp;
+    return 1;
+}
+
+void update_active_session_connection(void)
+{
+    struct udscs_connection *new_conn = NULL;
+    int n;
+
+    n = udscs_server_for_all_clients(server, connection_matches_active_session,
+                                     (void*)&new_conn);
+    if (n != 1)
+        new_conn = NULL;
+
+    if (new_conn == active_session_conn)
+        return;
+
+    active_session_conn = new_conn;
+
+    check_xorg_resolution();    
+}
+
 void agent_connect(struct udscs_connection *conn)
 {
     uint32_t pid;
@@ -398,6 +395,7 @@ void agent_connect(struct udscs_connection *conn)
     pid = udscs_get_peer_cred(conn).pid;
     agent_data->session = console_kit_session_for_pid(console_kit, pid);
     udscs_set_user_data(conn, (void *)agent_data);
+    update_active_session_connection();
 
     if (mon_config)
         udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, (uint8_t *)mon_config,
@@ -410,6 +408,9 @@ void agent_disconnect(struct udscs_connection *conn)
     struct agent_data *agent_data = udscs_get_user_data(conn);
 
     free(agent_data->session);
+    agent_data->session = NULL;
+    update_active_session_connection();
+
     free(agent_data);
 }
 
@@ -511,6 +512,7 @@ void main_loop(void)
         vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
         if (FD_ISSET(ck_fd, &readfds)) {
             active_session = console_kit_get_active_session(console_kit);
+            update_active_session_connection();
             check_xorg_resolution();
         }
     }

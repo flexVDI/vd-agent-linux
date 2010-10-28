@@ -570,5 +570,8 @@ void udscs_set_user_data(struct udscs_connection *conn, void *data)
 
 void *udscs_get_user_data(struct udscs_connection *conn)
 {
+    if (!conn)
+        return NULL;
+
     return conn->user_data;
 }
