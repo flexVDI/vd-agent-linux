@@ -87,7 +87,7 @@ static void send_capabilities(struct vdagent_virtio_port *port,
     free(caps);
 }
 
-static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
+static void do_client_monitors(struct vdagent_virtio_port *port, int port_nr,
     VDAgentMessage *message_header, VDAgentMonitorsConfig *new_monitors)
 {
     VDAgentReply reply;
@@ -123,7 +123,7 @@ static void do_monitors(struct vdagent_virtio_port *port, int port_nr,
                               (uint8_t *)&reply, sizeof(reply));
 }
 
-static void do_capabilities(struct vdagent_virtio_port *port,
+static void do_client_capabilities(struct vdagent_virtio_port *port,
     VDAgentMessage *message_header,
     VDAgentAnnounceCapabilities *caps)
 {
@@ -142,7 +142,7 @@ static void do_capabilities(struct vdagent_virtio_port *port,
         send_capabilities(port, 0);
 }
 
-static void do_clipboard(struct vdagent_virtio_port *port,
+static void do_client_clipboard(struct vdagent_virtio_port *port,
     VDAgentMessage *message_header, uint8_t *message_data)
 {
     uint32_t type = 0, opaque = 0, size = 0;
@@ -205,13 +205,13 @@ int virtio_port_read_complete(
     case VD_AGENT_MONITORS_CONFIG:
         if (message_header->size < sizeof(VDAgentMonitorsConfig))
             goto size_error;
-        do_monitors(port, chunk_header->port, message_header,
+        do_client_monitors(port, chunk_header->port, message_header,
                     (VDAgentMonitorsConfig *)data);
         break;
     case VD_AGENT_ANNOUNCE_CAPABILITIES:
         if (message_header->size < sizeof(VDAgentAnnounceCapabilities))
             goto size_error;
-        do_capabilities(port, message_header,
+        do_client_capabilities(port, message_header,
                         (VDAgentAnnounceCapabilities *)data);
         break;
     case VD_AGENT_CLIPBOARD_GRAB:
@@ -228,7 +228,7 @@ int virtio_port_read_complete(
         }
         if (message_header->size < min_size)
             goto size_error;
-        do_clipboard(port, message_header, data);
+        do_client_clipboard(port, message_header, data);
         break;
     default:
         if (debug)
