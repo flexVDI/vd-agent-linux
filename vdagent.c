@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
@@ -37,6 +38,7 @@
 static int verbose = 0;
 static struct vdagent_x11 *x11 = NULL;
 static FILE *logfile = NULL;
+static int quit = 0;
 
 void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, const uint8_t *data)
@@ -74,12 +76,18 @@ static void usage(FILE *fp)
             "  -d    log debug messages\n");
 }
 
+static void quit_handler(int sig)
+{
+    quit = 1;
+}
+
 int main(int argc, char *argv[])
 {
     struct udscs_connection *client = NULL;
     fd_set readfds, writefds;
     int c, n, nfds, x11_fd, retval = 0;
     char *home, filename[1024];
+    struct sigaction act;
 
     for (;;) {
         if (-1 == (c = getopt(argc, argv, "-dh")))
@@ -96,6 +104,14 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+
+    memset(&act, 0, sizeof(act));
+    act.sa_flags = SA_RESTART;
+    act.sa_handler = quit_handler;
+    sigaction(SIGINT, &act, NULL);
+    sigaction(SIGHUP, &act, NULL);
+    sigaction(SIGTERM, &act, NULL);
+    sigaction(SIGQUIT, &act, NULL);
 
     home = getenv("HOME");
     if (home) {
@@ -125,7 +141,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    while (client) {
+    while (client && !quit) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
