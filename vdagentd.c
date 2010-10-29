@@ -654,6 +654,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (do_daemonize)
+        daemonize();
+
     console_kit = console_kit_create(logfile);
     if (!console_kit) {
         fprintf(logfile, "Fatal could not connect to console kit\n");
@@ -667,9 +670,6 @@ int main(int argc, char *argv[])
         udscs_destroy_server(server);
         return 1;
     }
-
-    if (do_daemonize)
-        daemonize();
 
     main_loop();
 
