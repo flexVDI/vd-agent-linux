@@ -519,7 +519,10 @@ void daemonize(void)
         fprintf(logfile, "fork: %s\n", strerror(errno));
         retval = 1;
     default:
-        quit = 1;
+        udscs_destroy_server(server);
+        if (logfile != stderr)
+            fclose(logfile);
+        exit(0);
     }
 }
 
