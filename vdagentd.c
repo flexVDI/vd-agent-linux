@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
@@ -527,7 +528,6 @@ void main_loop(void)
     fd_set readfds, writefds;
     int n, nfds, ck_fd = 0;
 
-    /* FIXME catch sigquit and set a flag to quit */
     while (!quit) {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
@@ -583,10 +583,16 @@ void main_loop(void)
     }
 }
 
+static void quit_handler(int sig)
+{
+    quit = 1;
+}
+
 int main(int argc, char *argv[])
 {
     int c;
     int do_daemonize = 1;
+    struct sigaction act;
 
     for (;;) {
         if (-1 == (c = getopt(argc, argv, "-dhxs:u:")))
@@ -612,6 +618,14 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+
+    memset(&act, 0, sizeof(act));
+    act.sa_flags = SA_RESTART;
+    act.sa_handler = quit_handler;
+    sigaction(SIGINT, &act, NULL);
+    sigaction(SIGHUP, &act, NULL);
+    sigaction(SIGTERM, &act, NULL);
+    sigaction(SIGQUIT, &act, NULL);
 
     if (do_daemonize) {
         logfile = fopen(logfilename, "a");
