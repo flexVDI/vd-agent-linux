@@ -1,14 +1,30 @@
-
-spice agent for linux
+Spice agent for Linux
 =====================
 
-reads spice agent events, parses the mouse events,
-feeds them into the kernel via uinput.
+The spice agent for Linux consists of 2 parts, a daemon spice-vdagentd and
+a per X-session process spice-vdagent. The daemon gets automatically started
+in Spice guests through a udev rule. The per X-session gets automatically
+started in desktop environments which honor /etc/xdg/autostart, and under
+gdm.
+
+The main daemon needs to know which X-session daemon is the currently
+active X-session (think switch user functionality) for this console kit is
+used. spice-vdagent will not work without console kit.
+
+Features:
+* Client mouse mode (no need to grab mouse by client, no mouse lag)
+  this is handled by the daemon by feeding mouse events into the kernel
+  via uinput. This will only work if the active X-session is running a
+  spice-vdagent process so that its resolution can be determined.
+* Automatic adjustment of the X-session resolution to the client resolution
+* Support of copy and paste (text and images) between the active X-session
+  and the client
 
 Not handled: multiple displays.
 
-enjoy,
-  Gerd
+Enjoy,
+  Gerd & Hans
 
 --
 Gerd Hoffmann <kraxel@redhat.com>
+Hans de Goede <hdegoede@redhat.com>
