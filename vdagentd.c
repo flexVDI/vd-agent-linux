@@ -131,15 +131,18 @@ static void do_client_capabilities(struct vdagent_virtio_port *port,
     VDAgentMessage *message_header,
     VDAgentAnnounceCapabilities *caps)
 {
-    capabilities_size = VD_AGENT_CAPS_SIZE_FROM_MSG_SIZE(message_header->size);
+    int new_size = VD_AGENT_CAPS_SIZE_FROM_MSG_SIZE(message_header->size);
 
-    free(capabilities);
-    capabilities = malloc(capabilities_size * sizeof(uint32_t));
-    if (!capabilities) {
-        fprintf(logfile,
-                "out of memory allocating capabilities array (read)\n");
-        capabilities_size = 0;
-        return;
+    if (capabilities_size != new_size) {
+        capabilities_size = new_size;
+        free(capabilities);
+        capabilities = malloc(capabilities_size * sizeof(uint32_t));
+        if (!capabilities) {
+            fprintf(logfile,
+                    "out of memory allocating capabilities array (read)\n");
+            capabilities_size = 0;
+            return;
+        }
     }
     memcpy(capabilities, caps->caps, capabilities_size * sizeof(uint32_t));
     if (caps->request)
