@@ -1,0 +1,5 @@
+spice-agent-0.6.3
+-----------------
+* Initial release, starting with version nr 0.6.3, to indicate that it
+  more or less supports all parts of the cdagent protocol in spice-protocol
+  and spice 0.6.3
