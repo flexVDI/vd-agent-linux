@@ -1,6 +1,7 @@
 
 DESTDIR	?= 
 sbindir	?= /sbin
+bindir	?= /usr/bin
 udevdir	?= /lib/udev/rules.d
 xdgautostartdir ?= /etc/xdg/autostart
 gdmautostartdir ?= /usr/share/gdm/autostart/LoginWindow
@@ -15,8 +16,10 @@ TARGETS	:= spice-vdagentd spice-vdagent
 build: $(TARGETS)
 
 install: build
+	install -d $(DESTDIR)$(bindir)
 	install -d $(DESTDIR)$(sbindir)
-	install -p -m 755 $(TARGETS) $(DESTDIR)$(sbindir)
+	install -p -m 755 spice-vdagent $(DESTDIR)$(bindir)
+	install -p -m 755 spice-vdagentd $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(udevdir)
 	install -p -m 644 *.rules $(DESTDIR)$(udevdir)
 	install -d $(DESTDIR)$(xdgautostartdir)
