@@ -23,7 +23,7 @@
 #ifndef __VDAGENTD_PROTO_H
 #define __VDAGENTD_PROTO_H
 
-#define VDAGENTD_SOCKET "/tmp/vdagent"
+#define VDAGENTD_SOCKET "/tmp/spice-vdagent"
 
 enum {
     VDAGENTD_GUEST_XORG_RESOLUTION, /* client -> daemon */

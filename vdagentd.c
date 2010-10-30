@@ -45,7 +45,7 @@ struct agent_data {
 };
 
 /* variables */
-static const char *logfilename = "/var/log/vdagentd.log";
+static const char *logfilename = "/var/log/spice-vdagentd.log";
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput_device = "/dev/uinput";
 static int debug = 0;

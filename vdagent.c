@@ -115,9 +115,9 @@ int main(int argc, char *argv[])
 
     home = getenv("HOME");
     if (home) {
-        snprintf(filename, sizeof(filename), "%s/.spice-agent", home);
+        snprintf(filename, sizeof(filename), "%s/.spice-vdagent", home);
         n = mkdir(filename, 0755);
-        snprintf(filename, sizeof(filename), "%s/.spice-agent/log", home);
+        snprintf(filename, sizeof(filename), "%s/.spice-vdagent/log", home);
         logfile = fopen(filename, "w");
         if (!logfile) {
             fprintf(stderr, "Error opening %s: %s\n", filename,
