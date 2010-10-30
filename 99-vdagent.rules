@@ -1,2 +1,0 @@
-KERNEL=="vport*", ATTR{name}=="com.redhat.spice.0" RUN+="/sbin/modprobe uinput"
-KERNEL=="vport*", ATTR{name}=="com.redhat.spice.0" RUN+="/sbin/spice-vdagentd"

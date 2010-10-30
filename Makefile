@@ -3,7 +3,7 @@ VERSION = 0.6.3
 DESTDIR	?= 
 sbindir	?= /sbin
 bindir	?= /usr/bin
-udevdir	?= /lib/udev/rules.d
+initdir	?= /etc/rc.d/init.d
 xdgautostartdir ?= /etc/xdg/autostart
 gdmautostartdir ?= /usr/share/gdm/autostart/LoginWindow
 
@@ -21,8 +21,8 @@ install: build
 	install -d $(DESTDIR)$(sbindir)
 	install -p -m 755 spice-vdagent $(DESTDIR)$(bindir)
 	install -p -m 755 spice-vdagentd $(DESTDIR)$(sbindir)
-	install -d $(DESTDIR)$(udevdir)
-	install -p -m 644 *.rules $(DESTDIR)$(udevdir)
+	install -d $(DESTDIR)$(initdir)
+	install -p -m 755 spice-vdagentd.sh $(DESTDIR)$(initdir)/spice-vdagentd
 	install -d $(DESTDIR)$(xdgautostartdir)
 	install -d $(DESTDIR)$(gdmautostartdir)
 	desktop-file-install --dir=$(DESTDIR)$(xdgautostartdir) \

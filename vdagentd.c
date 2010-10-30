@@ -46,6 +46,7 @@ struct agent_data {
 
 /* variables */
 static const char *logfilename = "/var/log/spice-vdagentd.log";
+static const char *pidfilename = "/var/run/spice-vdagentd.pid";
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
@@ -512,6 +513,7 @@ static void usage(FILE *fp)
 void daemonize(void)
 {
     int x;
+    FILE *pidfile;
 
     /* detach from terminal */
     switch (fork()) {
@@ -519,6 +521,11 @@ void daemonize(void)
         close(0); close(1); close(2);
         setsid();
         x = open("/dev/null", O_RDWR); x = dup(0); x = dup(0);
+        pidfile = fopen(pidfilename, "w");
+        if (pidfile) {
+            fprintf(pidfile, "%d\n", (int)getpid());
+            fclose(pidfile);
+        }
         break;
     case -1:
         fprintf(logfile, "fork: %s\n", strerror(errno));
@@ -693,6 +700,9 @@ int main(int argc, char *argv[])
     fprintf(logfile, "vdagentd quiting, returning status %d\n", retval);
     if (logfile != stderr)
         fclose(logfile);
+
+    if (do_daemonize)
+        unlink(pidfilename);
 
     return retval;
 }
