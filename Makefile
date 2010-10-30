@@ -16,9 +16,9 @@ build: $(TARGETS)
 
 install: build
 	install -d $(DESTDIR)$(sbindir)
-	install -s $(TARGETS) $(DESTDIR)$(sbindir)
+	install -p -m 755 $(TARGETS) $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(udevdir)
-	install -m 644 *.rules $(DESTDIR)$(udevdir)
+	install -p -m 644 *.rules $(DESTDIR)$(udevdir)
 	install -d $(DESTDIR)$(xdgautostartdir)
 	install -d $(DESTDIR)$(gdmautostartdir)
 	desktop-file-install --dir=$(DESTDIR)$(xdgautostartdir) \
