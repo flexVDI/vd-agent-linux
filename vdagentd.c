@@ -511,12 +511,14 @@ static void usage(FILE *fp)
 
 void daemonize(void)
 {
+    int x;
+
     /* detach from terminal */
     switch (fork()) {
     case 0:
         close(0); close(1); close(2);
         setsid();
-        open("/dev/null",O_RDWR); dup(0); dup(0);
+        x = open("/dev/null", O_RDWR); x = dup(0); x = dup(0);
         break;
     case -1:
         fprintf(logfile, "fork: %s\n", strerror(errno));
