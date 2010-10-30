@@ -1,3 +1,4 @@
+VERSION = 0.6.3
 
 DESTDIR	?= 
 sbindir	?= /sbin
@@ -37,3 +38,13 @@ spice-vdagentd: vdagentd.o vdagentd-uinput.o udscs.o vdagent-virtio-port.o conso
 
 spice-vdagent: vdagent.o vdagent-x11.o udscs.o
 	$(CC) -o $@ $^ -lX11 -lXrandr -lXfixes
+
+tag:
+	@git tag -a -m "Tag as spice-vdagent-$(VERSION)" spice-vdagent-$(VERSION)
+	@echo "Tagged as spice-vdagent-$(VERSION)"
+
+archive-no-tag:
+	@git archive --format=tar --prefix=spice-vdagent-$(VERSION)/ spice-vdagent-$(VERSION) > spice-vdagent-$(VERSION).tar
+	@bzip2 -f spice-vdagent-$(VERSION).tar
+
+archive: clean tag archive-no-tag
