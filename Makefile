@@ -3,11 +3,10 @@ DESTDIR	?=
 sbindir	?= /sbin
 udevdir	?= /lib/udev/rules.d
 
-CFLAGS	?= -O2
-CFLAGS	+= -g -Wall
-CFLAGS  += $(shell pkg-config --cflags spice-protocol)
-CFLAGS  += $(shell pkg-config --cflags dbus-1)
-CFLAGS  += -D_GNU_SOURCE
+CFLAGS	 ?= -O2 -g -Wall
+CPPFLAGS  = $(shell pkg-config --cflags spice-protocol)
+CPPFLAGS += $(shell pkg-config --cflags dbus-1)
+CPPFLAGS += -D_GNU_SOURCE
 
 TARGETS	:= spice-vdagentd spice-vdagent
 
