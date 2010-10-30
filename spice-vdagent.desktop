@@ -1,7 +1,9 @@
 [Desktop Entry]
 Name=Spice vdagent
 Comment=Agent for Spice guests
-Exec=spice-agent
+Exec=/usr/bin/spice-vdagent
 Terminal=false
 Type=Application
 Categories=
+X-GNOME-Autostart-Phase=Initialization
+X-GNOME-AutoRestart=true
