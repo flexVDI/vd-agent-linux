@@ -2,6 +2,8 @@
 DESTDIR	?= 
 sbindir	?= /sbin
 udevdir	?= /lib/udev/rules.d
+xdgautostartdir ?= /etc/xdg/autostart
+gdmautostartdir ?= /usr/share/gdm/autostart/LoginWindow
 
 CFLAGS	 ?= -O2 -g -Wall
 CPPFLAGS  = $(shell pkg-config --cflags spice-protocol)
@@ -17,6 +19,12 @@ install: build
 	install -s $(TARGETS) $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(udevdir)
 	install -m 644 *.rules $(DESTDIR)$(udevdir)
+	install -d $(DESTDIR)$(xdgautostartdir)
+	install -d $(DESTDIR)$(gdmautostartdir)
+	desktop-file-install --dir=$(DESTDIR)$(xdgautostartdir) \
+		spice-vdagent.desktop
+	desktop-file-install --dir=$(DESTDIR)$(gdmautostartdir) \
+		spice-vdagent.desktop
 
 clean:
 	rm -f $(TARGETS) *.o *~

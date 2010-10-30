@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Spice vdagent
+Comment=Agent for Spice guests
+Exec=spice-agent
+Terminal=false
+Type=Application
+Categories=
