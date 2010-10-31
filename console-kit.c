@@ -85,11 +85,6 @@ struct console_kit *console_kit_create(FILE *errfile)
         return NULL;
     }
 
-    if (!console_kit_get_active_session(ck)) {
-        console_kit_destroy(ck);
-        return NULL;
-    }
-
     return ck;
 }
 
@@ -202,11 +197,11 @@ const char *console_kit_get_active_session(struct console_kit *ck)
                                                       &error);
     if (reply == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
-            fprintf(ck->errfile, "GetSeats failed: %s\n",
+            fprintf(ck->errfile, "GetActiveSession failed: %s\n",
                     error.message);
             dbus_error_free(&error);
         } else
-            fprintf(ck->errfile, "GetSeats failed\n");
+            fprintf(ck->errfile, "GetActiveSession failed\n");
         goto exit;
     }
 
@@ -236,7 +231,8 @@ exit:
             dbus_message_unref(message);
     }
 
-    return ck->active_session;
+    /* In case the session was changed while we were running */
+    return console_kit_check_active_session_change(ck);
 }
 
 char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid)

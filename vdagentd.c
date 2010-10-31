@@ -409,6 +409,9 @@ void update_active_session_connection(void)
     struct udscs_connection *new_conn = NULL;
     int n;
 
+    if (!active_session)
+        active_session = console_kit_get_active_session(console_kit);
+
     n = udscs_server_for_all_clients(server, connection_matches_active_session,
                                      (void*)&new_conn);
     if (n != 1)
@@ -588,11 +591,6 @@ void main_loop(void)
         if (FD_ISSET(ck_fd, &readfds)) {
             active_session = console_kit_get_active_session(console_kit);
             update_active_session_connection();
-            if (!active_session) {
-                fprintf(logfile, "Fatal error: could not get active session\n");
-                retval = 1;
-                break;
-            }
         }
         fflush(logfile);
     }
@@ -675,13 +673,6 @@ int main(int argc, char *argv[])
     console_kit = console_kit_create(logfile);
     if (!console_kit) {
         fprintf(logfile, "Fatal could not connect to console kit\n");
-        udscs_destroy_server(server);
-        return 1;
-    }
-    active_session = console_kit_get_active_session(console_kit);
-    if (!active_session) {
-        fprintf(logfile, "Fatal could not get active session\n");
-        console_kit_destroy(console_kit);
         udscs_destroy_server(server);
         return 1;
     }
