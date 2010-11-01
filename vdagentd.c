@@ -688,6 +688,8 @@ int main(int argc, char *argv[])
     vdagent_virtio_port_destroy(&virtio_port);
     console_kit_destroy(console_kit);
     udscs_destroy_server(server);
+    if (unlink(VDAGENTD_SOCKET) != 0)
+        fprintf(logfile, "unlink %s: %s\n", VDAGENTD_SOCKET, strerror(errno));
     fprintf(logfile, "vdagentd quiting, returning status %d\n", retval);
     if (logfile != stderr)
         fclose(logfile);

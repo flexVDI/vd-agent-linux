@@ -108,14 +108,6 @@ struct udscs_server *udscs_create_server(const char *socketname,
         return NULL;
     }
 
-    c = unlink(socketname);
-    if (c != 0 && errno != ENOENT) {
-        fprintf(server->errfile, "unlink %s: %s\n", socketname,
-                strerror(errno));
-        free(server);
-        return NULL;
-    }
-
     address.sun_family = AF_UNIX;
     snprintf(address.sun_path, sizeof(address.sun_path), "%s", socketname);
     c = bind(server->fd, (struct sockaddr *)&address, sizeof(address));
