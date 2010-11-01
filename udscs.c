@@ -215,6 +215,8 @@ void udscs_destroy_connection(struct udscs_connection **connp)
 
     free(conn->data.buf);
 
+    if (conn->next)
+        conn->next->prev = conn->prev;
     if (conn->prev)
         conn->prev->next = conn->next;
 
