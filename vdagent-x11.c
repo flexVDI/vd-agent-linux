@@ -211,8 +211,15 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
          while (x11->selection_request)
              vdagent_x11_send_selection_notify(x11, None, 0);
     }
+    if (x11->clipboard_request_target != None) {
+        fprintf(x11->errfile,
+                "client clipboard request pending on clipboard ownership "
+                "change, clearing");
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+        x11->clipboard_request_target = None;
+    }
     x11->clipboard_data_size = 0;
-    x11->clipboard_request_target = None;
     x11->expect_property_notify = 0;
 
     if (new_owner == owner_none) {
@@ -427,7 +434,7 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
 
             if (x11->expect_property_notify) {
                 fprintf(x11->errfile,
-                        "received an incr property notify while "
+                        "received an incr SelectionNotify while "
                         "still reading another incr property\n");
                 goto exit;
             }
@@ -546,9 +553,6 @@ static uint32_t vdagent_x11_target_to_type(struct vdagent_x11 *x11,
 {
     int i, j;
 
-    if (target == None)
-        return VD_AGENT_CLIPBOARD_NONE;
-
     for (i = 0; i < clipboard_format_count; i++) {
         for (j = 0; j < x11->clipboard_formats[i].atom_count; i++) {
             if (x11->clipboard_formats[i].atoms[j] == target) {
@@ -581,11 +585,13 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     unsigned char *data = NULL;
     uint32_t type;
 
-    type  = vdagent_x11_target_to_type(x11, x11->clipboard_request_target);
-
-    if (x11->clipboard_request_target == None)
+    if (x11->clipboard_request_target == None) {
         fprintf(x11->errfile, "SelectionNotify received without a target\n");
-    else if (!incr &&
+        return;
+    }
+
+    type  = vdagent_x11_target_to_type(x11, x11->clipboard_request_target);
+    if (!incr &&
              event->xselection.target != x11->clipboard_request_target &&
              event->xselection.target != x11->incr_atom)
         fprintf(x11->errfile, "Requested %s target got %s\n",
