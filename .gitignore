@@ -1,4 +1,4 @@
-vdagent
-vdagentd
+spice-vdagent
+spice-vdagentd
 *.o
 *~
