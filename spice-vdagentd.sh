@@ -24,7 +24,7 @@
 # Source function library.
 . /etc/rc.d/init.d/functions
 
-exec="/sbin/spice-vdagentd"
+exec="/usr/sbin/spice-vdagentd"
 prog="spice-vdagentd"
 port="/dev/virtio-ports/com.redhat.spice.0"
 

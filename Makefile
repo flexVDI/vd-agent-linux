@@ -1,7 +1,7 @@
 VERSION = 0.6.3
 
 DESTDIR	?= 
-sbindir	?= /sbin
+sbindir	?= /usr/sbin
 bindir	?= /usr/bin
 initdir	?= /etc/rc.d/init.d
 xdgautostartdir ?= /etc/xdg/autostart
