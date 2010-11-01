@@ -586,7 +586,8 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     if (x11->clipboard_request_target == None)
         fprintf(x11->errfile, "SelectionNotify received without a target\n");
     else if (!incr &&
-             event->xselection.target != x11->clipboard_request_target)
+             event->xselection.target != x11->clipboard_request_target &&
+             event->xselection.target != x11->incr_atom)
         fprintf(x11->errfile, "Requested %s target got %s\n",
                 vdagent_x11_get_atom_name(x11, x11->clipboard_request_target),
                 vdagent_x11_get_atom_name(x11, event->xselection.target));
