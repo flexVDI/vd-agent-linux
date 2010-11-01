@@ -13,8 +13,8 @@
 # Required-Stop: $local_fs messagebus
 # Should-Start: $local_fs messagebus
 # Should-Stop: $local_fs messagebus
-# Default-Start: 2 3 4 5
-# Default-Stop: 0 1 6
+# Default-Start: 5
+# Default-Stop: 0 1 2 3 4 6
 # Short-Description: Agent daemon for Spice guests
 # Description: Together with a per X-session agent process the spice agent
 # daemon enhances the spice guest user experience with client
