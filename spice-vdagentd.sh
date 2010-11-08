@@ -17,8 +17,8 @@
 # Default-Stop: 0 1 2 3 4 6
 # Short-Description: Agent daemon for Spice guests
 # Description: Together with a per X-session agent process the spice agent
-# daemon enhances the spice guest user experience with client
-# mouse mode, guest <-> client copy and paste support and more.
+#	daemon enhances the spice guest user experience with client
+#	mouse mode, guest <-> client copy and paste support and more.
 ### END INIT INFO
 
 # Source function library.
