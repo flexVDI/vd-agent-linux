@@ -27,6 +27,7 @@
 exec="/usr/sbin/spice-vdagentd"
 prog="spice-vdagentd"
 port="/dev/virtio-ports/com.redhat.spice.0"
+pid="/var/run/spice-vdagentd/spice-vdagentd.pid"
 
 [ -e /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
 
@@ -38,7 +39,7 @@ start() {
     # In case the previous running vdagentd crashed
     rm -f /var/run/spice-vdagentd/spice-vdagent-sock
     echo -n $"Starting $prog: "
-    daemon $exec $SPICE_VDAGENTD_EXTRA_ARGS
+    daemon --pidfile $pid $exec $SPICE_VDAGENTD_EXTRA_ARGS
     retval=$?
     echo
     [ $retval -eq 0 ] && touch $lockfile
@@ -47,7 +48,7 @@ start() {
 
 stop() {
     echo -n $"Stopping $prog: "
-    killproc $prog
+    killproc -p $pid $prog
     retval=$?
     echo
     [ $retval -eq 0 ] && rm -f $lockfile
@@ -69,7 +70,7 @@ force_reload() {
 
 rh_status() {
     # run checks to determine if the service is running or use generic status
-    status $prog
+    status -p $pid $prog
 }
 
 rh_status_q() {

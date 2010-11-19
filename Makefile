@@ -7,6 +7,7 @@ initdir	?= /etc/rc.d/init.d
 xdgautostartdir ?= /etc/xdg/autostart
 gdmautostartdir ?= /usr/share/gdm/autostart/LoginWindow
 socketdir ?= /var/run/spice-vdagentd
+logdir ?= /var/log/spice-vdagentd
 
 CFLAGS	 ?= -O2 -g -Wall
 CPPFLAGS  = $(shell pkg-config --cflags spice-protocol)
@@ -21,6 +22,7 @@ install: build
 	install -d $(DESTDIR)$(bindir)
 	install -d $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(socketdir)
+	install -d $(DESTDIR)$(logdir)
 	install -p -m 755 spice-vdagent $(DESTDIR)$(bindir)
 	install -p -m 755 spice-vdagentd $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(initdir)
