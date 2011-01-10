@@ -35,7 +35,7 @@ lockfile=/var/lock/subsys/$prog
 
 start() {
     [ -x $exec ] || exit 5
-    [ -c $port ] || exit 6
+    [ -c $port ] || exit 0
     # In case the previous running vdagentd crashed
     rm -f /var/run/spice-vdagentd/spice-vdagent-sock
     echo -n $"Starting $prog: "
