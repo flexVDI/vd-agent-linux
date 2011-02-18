@@ -187,6 +187,11 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
                                    XFixesSetSelectionOwnerNotifyMask|
                                    XFixesSelectionWindowDestroyNotifyMask|
                                    XFixesSelectionClientCloseNotifyMask);
+        XFixesSelectSelectionInput(x11->display, x11->root_window,
+                                   x11->clipboard_primary_atom,
+                                   XFixesSetSelectionOwnerNotifyMask|
+                                   XFixesSelectionWindowDestroyNotifyMask|
+                                   XFixesSelectionClientCloseNotifyMask);
     } else
         fprintf(x11->errfile,
                 "no xfixes, no guest -> client copy paste support\n");
