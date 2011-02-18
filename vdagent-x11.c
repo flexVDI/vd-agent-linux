@@ -258,7 +258,7 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     if (x11->selection_request) {
         fprintf(x11->errfile,
                 "selection requests pending on clipboard ownership change, "
-                "clearing");
+                "clearing\n");
         while (x11->selection_request) {
             vdagent_x11_send_selection_notify(x11, None, 0);
             vdagent_x11_next_selection_request(x11);
@@ -267,7 +267,7 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     if (x11->clipboard_request_target != None) {
         fprintf(x11->errfile,
                 "client clipboard request pending on clipboard ownership "
-                "change, clearing");
+                "change, clearing\n");
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
                     VD_AGENT_CLIPBOARD_NONE, NULL, 0);
         x11->clipboard_request_target = None;
@@ -284,6 +284,49 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
         x11->clipboard_type_count = 0;
     }
     x11->clipboard_owner = new_owner;
+}
+
+static int vdagent_x11_get_clipboard_atom(struct vdagent_x11 *x11, uint8_t selection, Atom* clipboard)
+{
+    if (selection == VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD) {
+        *clipboard = x11->clipboard_atom;
+    } else if (selection == VD_AGENT_CLIPBOARD_SELECTION_PRIMARY) {
+        *clipboard = x11->clipboard_primary_atom;
+    } else {
+        fprintf(x11->errfile, "selection_get_grab: unknown selection\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int vdagent_x11_get_clipboard_selection(struct vdagent_x11 *x11,
+                                               XEvent *event, uint8_t *selection)
+{
+    Atom atom;
+
+    if (event->type == x11->xfixes_event_base) {
+        XFixesSelectionNotifyEvent *xfev = (XFixesSelectionNotifyEvent *)event;
+        atom = xfev->selection;
+    } else if (event->type == SelectionNotify) {
+        atom = event->xselection.selection;
+    } else if (event->type == SelectionRequest) {
+        atom = event->xselectionrequest.selection;
+    } else {
+        fprintf(x11->errfile, "get_clipboard_selection: unknown event type\n");
+        return -1;
+    }
+
+    if (atom == x11->clipboard_atom) {
+        *selection = VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD;
+    } else if (atom == x11->clipboard_primary_atom) {
+        *selection = VD_AGENT_CLIPBOARD_SELECTION_PRIMARY;
+    } else {
+        fprintf(x11->errfile, "get_clipboard_selection: unknown selection\n");
+        return -1;
+    }
+
+    return 0;
 }
 
 static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
