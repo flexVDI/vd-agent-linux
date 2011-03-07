@@ -805,8 +805,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     if (mon_config->num_of_monitors != 1) {
         fprintf(x11->errfile,
-                "Only 1 monitor supported, ignoring monitor config\n");
-        return;
+                "Only 1 monitor supported, ignoring additional monitors\n");
     }
 
     sizes = XRRSizes(x11->display, x11->screen, &num_sizes);
