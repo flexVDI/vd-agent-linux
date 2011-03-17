@@ -658,12 +658,16 @@ int main(int argc, char *argv[])
     if (!server) {
         fprintf(logfile, "Fatal could not create server socket %s\n",
                 VDAGENTD_SOCKET);
+        if (logfile != stderr)
+            fclose(logfile);
         return 1;
     }
     if (chmod(VDAGENTD_SOCKET, 0666)) {
         fprintf(logfile, "Fatal could not change permissions on %s: %s\n",
                 VDAGENTD_SOCKET, strerror(errno));
         udscs_destroy_server(server);
+        if (logfile != stderr)
+            fclose(logfile);
         return 1;
     }
 
@@ -674,6 +678,8 @@ int main(int argc, char *argv[])
     if (!console_kit) {
         fprintf(logfile, "Fatal could not connect to console kit\n");
         udscs_destroy_server(server);
+        if (logfile != stderr)
+            fclose(logfile);
         return 1;
     }
 
