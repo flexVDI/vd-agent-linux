@@ -537,7 +537,7 @@ void daemonize(void)
         udscs_destroy_server(server);
         if (logfile != stderr)
             fclose(logfile);
-        exit(0);
+        exit(retval);
     }
 }
 
