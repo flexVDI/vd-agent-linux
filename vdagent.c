@@ -37,6 +37,7 @@
 
 static int verbose = 0;
 static struct vdagent_x11 *x11 = NULL;
+static struct udscs_connection *client = NULL;
 static FILE *logfile = NULL;
 static int quit = 0;
 
@@ -73,7 +74,8 @@ static void usage(FILE *fp)
             "vdagent -- spice agent xorg client\n"
             "options:\n"
             "  -h    print this text\n"
-            "  -d    log debug messages\n");
+            "  -d    log debug messages\n"
+            "  -x    don't daemonize (and log to logfile)\n");
 }
 
 static void quit_handler(int sig)
@@ -81,20 +83,45 @@ static void quit_handler(int sig)
     quit = 1;
 }
 
+void daemonize(void)
+{
+    int x, retval = 0;
+
+    /* detach from terminal */
+    switch (fork()) {
+    case 0:
+        close(0); close(1); close(2);
+        setsid();
+        x = open("/dev/null", O_RDWR); dup(x); dup(x);
+        break;
+    case -1:
+        fprintf(logfile, "fork: %s\n", strerror(errno));
+        retval = 1;
+    default:
+        udscs_destroy_connection(&client);
+        if (logfile != stderr)
+            fclose(logfile);
+        exit(retval);
+    }
+}
+
 int main(int argc, char *argv[])
 {
-    struct udscs_connection *client = NULL;
     fd_set readfds, writefds;
     int c, n, nfds, x11_fd, retval = 0;
+    int do_daemonize = 1;
     char *home, filename[1024];
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dh")))
+        if (-1 == (c = getopt(argc, argv, "-dxh")))
             break;
         switch (c) {
         case 'd':
             verbose++;
+            break;
+        case 'x':
+            do_daemonize = 0;
             break;
         case 'h':
             usage(stdout);
@@ -113,31 +140,41 @@ int main(int argc, char *argv[])
     sigaction(SIGTERM, &act, NULL);
     sigaction(SIGQUIT, &act, NULL);
 
+    logfile = stderr;
     home = getenv("HOME");
     if (home) {
         snprintf(filename, sizeof(filename), "%s/.spice-vdagent", home);
         n = mkdir(filename, 0755);
         snprintf(filename, sizeof(filename), "%s/.spice-vdagent/log", home);
-        logfile = fopen(filename, "w");
-        if (!logfile) {
-            fprintf(stderr, "Error opening %s: %s\n", filename,
-                    strerror(errno));
-            logfile = stderr;
+        if (do_daemonize) {
+            logfile = fopen(filename, "w");
+            if (!logfile) {
+                fprintf(stderr, "Error opening %s: %s\n", filename,
+                        strerror(errno));
+                logfile = stderr;
+            }
         }
     } else {
         fprintf(stderr, "Could not get home directory, logging to stderr\n");
-        logfile = stderr;
     }
 
     client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
                            vdagentd_messages, VDAGENTD_NO_MESSAGES,
                            verbose? logfile:NULL, logfile);
-    if (!client)
+    if (!client) {
+        if (logfile != stderr)
+            fclose(logfile);
         return 1;
+    }
+
+    if (do_daemonize)
+        daemonize();
 
     x11 = vdagent_x11_create(client, logfile, verbose);
     if (!x11) {
         udscs_destroy_connection(&client);
+        if (logfile != stderr)
+            fclose(logfile);
         return 1;
     }
 
@@ -168,7 +205,8 @@ int main(int argc, char *argv[])
 
     vdagent_x11_destroy(x11);
     udscs_destroy_connection(&client);
-    fclose(logfile);
+    if (logfile != stderr)
+        fclose(logfile);
 
     return retval;
 }
