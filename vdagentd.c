@@ -362,6 +362,7 @@ static void check_xorg_resolution(void) {
             fprintf(logfile, "Fatal uinput error\n");
             retval = 1;
             quit = 1;
+            return;
         }
 
         if (!virtio_port) {
