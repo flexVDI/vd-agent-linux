@@ -204,6 +204,9 @@ static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **portp)
 
     if (port->message_header_read < sizeof(port->message_header)) {
         read = sizeof(port->message_header) - port->message_header_read;
+        if (read > port->chunk_header.size) {
+            read = port->chunk_header.size;
+        }
         memcpy((uint8_t *)&port->message_header + port->message_header_read,
                port->chunk_data, read);
         port->message_header_read += read;
