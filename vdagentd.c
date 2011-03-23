@@ -66,7 +66,7 @@ static int retval = 0;
 
 /* utility functions */
 /* vdagentd <-> spice-client communication handling */
-static void send_capabilities(struct vdagent_virtio_port *port,
+static void send_capabilities(struct vdagent_virtio_port *vport,
     uint32_t request)
 {
     VDAgentAnnounceCapabilities *caps;
@@ -86,13 +86,13 @@ static void send_capabilities(struct vdagent_virtio_port *port,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
 
-    vdagent_virtio_port_write(port, VDP_CLIENT_PORT,
+    vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
                               (uint8_t *)caps, size);
     free(caps);
 }
 
-static void do_client_monitors(struct vdagent_virtio_port *port, int port_nr,
+static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
     VDAgentMessage *message_header, VDAgentMonitorsConfig *new_monitors)
 {
     VDAgentReply reply;
@@ -124,11 +124,11 @@ static void do_client_monitors(struct vdagent_virtio_port *port, int port_nr,
     /* Acknowledge reception of monitors config to spice server / client */
     reply.type  = VD_AGENT_MONITORS_CONFIG;
     reply.error = VD_AGENT_SUCCESS;
-    vdagent_virtio_port_write(port, port_nr, VD_AGENT_REPLY, 0,
+    vdagent_virtio_port_write(vport, port_nr, VD_AGENT_REPLY, 0,
                               (uint8_t *)&reply, sizeof(reply));
 }
 
-static void do_client_capabilities(struct vdagent_virtio_port *port,
+static void do_client_capabilities(struct vdagent_virtio_port *vport,
     VDAgentMessage *message_header,
     VDAgentAnnounceCapabilities *caps)
 {
@@ -147,10 +147,10 @@ static void do_client_capabilities(struct vdagent_virtio_port *port,
     }
     memcpy(capabilities, caps->caps, capabilities_size * sizeof(uint32_t));
     if (caps->request)
-        send_capabilities(port, 0);
+        send_capabilities(vport, 0);
 }
 
-static void do_client_clipboard(struct vdagent_virtio_port *port,
+static void do_client_clipboard(struct vdagent_virtio_port *vport,
     VDAgentMessage *message_header, uint8_t *message_data)
 {
     uint32_t type = 0, opaque = 0, size = 0;
@@ -193,7 +193,7 @@ static void do_client_clipboard(struct vdagent_virtio_port *port,
 }
 
 int virtio_port_read_complete(
-        struct vdagent_virtio_port *port,
+        struct vdagent_virtio_port *vport,
         VDIChunkHeader *chunk_header,
         VDAgentMessage *message_header,
         uint8_t *data)
@@ -229,13 +229,13 @@ int virtio_port_read_complete(
     case VD_AGENT_MONITORS_CONFIG:
         if (message_header->size < sizeof(VDAgentMonitorsConfig))
             goto size_error;
-        do_client_monitors(port, chunk_header->port, message_header,
+        do_client_monitors(vport, chunk_header->port, message_header,
                     (VDAgentMonitorsConfig *)data);
         break;
     case VD_AGENT_ANNOUNCE_CAPABILITIES:
         if (message_header->size < sizeof(VDAgentAnnounceCapabilities))
             goto size_error;
-        do_client_capabilities(port, message_header,
+        do_client_capabilities(vport, message_header,
                         (VDAgentAnnounceCapabilities *)data);
         break;
     case VD_AGENT_CLIPBOARD_GRAB:
@@ -252,7 +252,7 @@ int virtio_port_read_complete(
         }
         if (message_header->size < min_size)
             goto size_error;
-        do_client_clipboard(port, message_header, data);
+        do_client_clipboard(vport, message_header, data);
         break;
     default:
         if (debug)

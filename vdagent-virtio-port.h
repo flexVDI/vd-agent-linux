@@ -35,7 +35,7 @@ struct vdagent_virtio_port;
    to close the port can be indicated be returning -1 from the callback,
    in other cases return 0. */
 typedef int (*vdagent_virtio_port_read_callback)(
-    struct vdagent_virtio_port *port,
+    struct vdagent_virtio_port *vport,
     VDIChunkHeader *chunk_header,
     VDAgentMessage *message_header,
     uint8_t *data);
@@ -58,21 +58,21 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
     FILE *errfile);
     
 /* The contents of portp will be made NULL */
-void vdagent_virtio_port_destroy(struct vdagent_virtio_port **portp);
+void vdagent_virtio_port_destroy(struct vdagent_virtio_port **vportp);
 
 
 /* Given a vdagent_virtio_port fill the fd_sets pointed to by readfds and
    writefds for select() usage.
 
    Return value: value of the highest fd + 1 */
-int vdagent_virtio_port_fill_fds(struct vdagent_virtio_port *port,
+int vdagent_virtio_port_fill_fds(struct vdagent_virtio_port *vport,
         fd_set *readfds, fd_set *writefds);
 
 /* Handle any events flagged by select for the given vdagent_virtio_port.
    Note the port may be destroyed (when disconnected) by this call
    in this case the disconnect calllback will get called before the
    destruction and the contents of connp will be made NULL */
-void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **portp,
+void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **vportp,
         fd_set *readfds, fd_set *writefds);
 
 
@@ -80,13 +80,13 @@ void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **portp,
 
    Returns 0 on success -1 on error (only happens when malloc fails) */
 int vdagent_virtio_port_write(
-        struct vdagent_virtio_port *port,
+        struct vdagent_virtio_port *vport,
         uint32_t port_nr,
         uint32_t message_type,
         uint32_t message_opaque,
         const uint8_t *data,
         uint32_t data_size);
 
-void vdagent_virtio_port_flush(struct vdagent_virtio_port **portp);
+void vdagent_virtio_port_flush(struct vdagent_virtio_port **vportp);
 
 #endif
