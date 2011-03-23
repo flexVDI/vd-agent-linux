@@ -22,3 +22,14 @@ noinst_HEADERS = src/console-kit.h \
                  src/vdagentd-uinput.h \
                  src/vdagentd-proto.h \
                  src/vdagent-virtio-port.h
+
+xdgautostartdir = $(sysconfdir)/xdg/autostart
+xdgautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
+
+gdmautostartdir = $(datadir)/gdm/autostart/LoginWindow
+gdmautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
+
+initdir = $(sysconfdir)/rc.d/init.d
+init_DATA = $(top_srcdir)/data/spice-vdagentd
+
+EXTRA_DIST = $(xdgautostart_DATA) $(gdmautostart_DATA) $(init_DATA)
