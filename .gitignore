@@ -1,6 +1,6 @@
-spice-vdagent
-spice-vdagentd
 *~
+src/spice-vdagent
+src/spice-vdagentd
 src/*.o
 src/.deps
 src/.dirstamp
