@@ -194,7 +194,7 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
 
 int virtio_port_read_complete(
         struct vdagent_virtio_port *vport,
-        VDIChunkHeader *chunk_header,
+        int port_nr,
         VDAgentMessage *message_header,
         uint8_t *data)
 {
@@ -229,7 +229,7 @@ int virtio_port_read_complete(
     case VD_AGENT_MONITORS_CONFIG:
         if (message_header->size < sizeof(VDAgentMonitorsConfig))
             goto size_error;
-        do_client_monitors(vport, chunk_header->port, message_header,
+        do_client_monitors(vport, port_nr, message_header,
                     (VDAgentMonitorsConfig *)data);
         break;
     case VD_AGENT_ANNOUNCE_CAPABILITIES:

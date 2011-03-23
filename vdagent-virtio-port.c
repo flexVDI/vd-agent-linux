@@ -243,7 +243,7 @@ static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **vportp)
 
         if (vport->message_data_pos == vport->message_header.size) {
             if (vport->read_callback) {
-                int r = vport->read_callback(vport, &vport->chunk_header,
+                int r = vport->read_callback(vport, vport->chunk_header.port,
                                  &vport->message_header, vport->message_data);
                 if (r == -1) {
                     vdagent_virtio_port_destroy(vportp);

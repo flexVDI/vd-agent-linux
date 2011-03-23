@@ -36,7 +36,7 @@ struct vdagent_virtio_port;
    in other cases return 0. */
 typedef int (*vdagent_virtio_port_read_callback)(
     struct vdagent_virtio_port *vport,
-    VDIChunkHeader *chunk_header,
+    int port_nr,
     VDAgentMessage *message_header,
     uint8_t *data);
 
