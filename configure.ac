@@ -1,0 +1,22 @@
+AC_PREREQ(2.65)
+AC_INIT([vd-agent], [0.6.3])
+AC_CONFIG_SRCDIR([configure.ac])
+
+AM_INIT_AUTOMAKE([foreign dist-bzip2 no-dist-gzip subdir-objects])
+m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
+
+AC_PROG_CC
+AC_HEADER_STDC
+AC_PROG_INSTALL
+AC_PROG_LN_S
+AC_DEFINE(_GNU_SOURCE)
+
+PKG_PROG_PKG_CONFIG
+PKG_CHECK_MODULES(X, [xfixes xrandr x11])
+PKG_CHECK_MODULES(DBUS, [dbus-1])
+PKG_CHECK_MODULES(SPICE, [spice-protocol])
+
+AC_CONFIG_FILES([
+Makefile
+])
+AC_OUTPUT
