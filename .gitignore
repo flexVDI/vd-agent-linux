@@ -1,4 +1,16 @@
 spice-vdagent
 spice-vdagentd
-*.o
 *~
+src/*.o
+src/.deps
+src/.dirstamp
+config.log
+config.status
+aclocal.m4
+autom4te.cache
+configure
+depcomp
+install-sh
+Makefile.in
+Makefile
+missing
