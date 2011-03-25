@@ -19,6 +19,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,12 +55,18 @@ static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
+#ifdef HAVE_CONSOLE_KIT
 static struct console_kit *console_kit = NULL;
+#endif
 static struct vdagentd_uinput *uinput = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
+#ifdef HAVE_CONSOLE_KIT
 static const char *active_session = NULL;
+#else
+static unsigned int session_count = 0;
+#endif
 static struct udscs_connection *active_session_conn = NULL;
 static int agent_owns_clipboard[256] = { 0, };
 static FILE *logfile = NULL;
@@ -440,6 +449,7 @@ static void check_xorg_resolution(void)
     }
 }
 
+#ifdef HAVE_CONSOLE_KIT
 static int connection_matches_active_session(struct udscs_connection **connp,
     void *priv)
 {
@@ -468,12 +478,14 @@ void release_clipboards(void)
         agent_owns_clipboard[sel] = 0;
     }
 }
+#endif
 
 void update_active_session_connection(void)
 {
     struct udscs_connection *new_conn = NULL;
     int n;
 
+#ifdef HAVE_CONSOLE_KIT
     if (!active_session)
         active_session = console_kit_get_active_session(console_kit);
 
@@ -486,6 +498,7 @@ void update_active_session_connection(void)
         return;
 
     active_session_conn = new_conn;
+#endif
 
     release_clipboards();
 
@@ -503,9 +516,24 @@ void agent_connect(struct udscs_connection *conn)
         udscs_destroy_connection(&conn);
         return;
     }
-
+#ifdef HAVE_CONSOLE_KIT
     pid = udscs_get_peer_cred(conn).pid;
     agent_data->session = console_kit_session_for_pid(console_kit, pid);
+#else
+    session_count++;
+    if (session_count == 1)
+        active_session_conn = conn;
+    else {
+        /* disable communication with agents when we've got multiple
+         * connections to the vdagentd and no consolekit since we can't
+         * know to which one we should send data
+         */
+        fprintf(logfile, "Trying to use multiple vdagent without ConsoleKit support, "
+                "disabling vdagent to avoid potential information leak\n");
+        active_session_conn = NULL;
+    }
+
+#endif
     udscs_set_user_data(conn, (void *)agent_data);
     update_active_session_connection();
 
@@ -524,6 +552,9 @@ void agent_disconnect(struct udscs_connection *conn)
     update_active_session_connection();
 
     free(agent_data);
+#ifndef HAVE_CONSOLE_KIT
+    session_count--;
+#endif
 }
 
 void agent_read_complete(struct udscs_connection **connp,
@@ -621,10 +652,12 @@ void main_loop(void)
         if (n >= nfds)
             nfds = n + 1;
 
+#ifdef HAVE_CONSOLE_KIT
         ck_fd = console_kit_get_fd(console_kit);
         FD_SET(ck_fd, &readfds);
         if (ck_fd >= nfds)
             nfds = ck_fd + 1;
+#endif
 
         n = select(nfds, &readfds, &writefds, NULL, NULL);
         if (n == -1) {
@@ -654,10 +687,12 @@ void main_loop(void)
             }
         }
 
+#ifdef HAVE_CONSOLE_KIT
         if (FD_ISSET(ck_fd, &readfds)) {
             active_session = console_kit_get_active_session(console_kit);
             update_active_session_connection();
         }
+#endif
         fflush(logfile);
     }
 }
@@ -740,6 +775,7 @@ int main(int argc, char *argv[])
     if (do_daemonize)
         daemonize();
 
+#ifdef HAVE_CONSOLE_KIT
     console_kit = console_kit_create(logfile);
     if (!console_kit) {
         fprintf(logfile, "Fatal could not connect to console kit\n");
@@ -748,6 +784,7 @@ int main(int argc, char *argv[])
             fclose(logfile);
         return 1;
     }
+#endif
 
     main_loop();
 
@@ -756,7 +793,9 @@ int main(int argc, char *argv[])
     vdagentd_uinput_destroy(&uinput);
     vdagent_virtio_port_flush(&virtio_port);
     vdagent_virtio_port_destroy(&virtio_port);
+#ifdef HAVE_CONSOLE_KIT
     console_kit_destroy(console_kit);
+#endif
     udscs_destroy_server(server);
     if (unlink(VDAGENTD_SOCKET) != 0)
         fprintf(logfile, "unlink %s: %s\n", VDAGENTD_SOCKET, strerror(errno));

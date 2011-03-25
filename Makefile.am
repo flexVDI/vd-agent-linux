@@ -12,8 +12,10 @@ src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(SPICE_LIBS)
 src_spice_vdagentd_SOURCES = src/vdagentd.c \
                              src/vdagentd-uinput.c \
                              src/vdagent-virtio-port.c \
-                             src/console-kit.c \
                              src/udscs.c
+if HAVE_CONSOLE_KIT
+src_spice_vdagentd_SOURCES += src/console-kit.c
+endif
 
 noinst_HEADERS = src/console-kit.h \
                  src/vdagentd-proto-strings.h \
