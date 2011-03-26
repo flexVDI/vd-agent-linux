@@ -208,8 +208,13 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
         fprintf(x11->errfile,
                 "selection requests pending on clipboard ownership change, "
                 "clearing");
-        while (x11->selection_request)
+        while (x11->selection_request) {
+            struct vdagent_x11_selection_request *selection_request;
             vdagent_x11_send_selection_notify(x11, None, 0);
+            selection_request = x11->selection_request;
+            x11->selection_request = selection_request->next;
+            free(selection_request);
+        }
     }
     if (x11->clipboard_request_target != None) {
         fprintf(x11->errfile,
@@ -710,11 +715,12 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
     XSendEvent(x11->display, event->xselectionrequest.requestor, 0, 0, &res);
     XFlush(x11->display);
 
-    selection_request = x11->selection_request;
-    x11->selection_request = selection_request->next;
-    free(selection_request);
-    if (process_next_req)
+    if (process_next_req) {
+        selection_request = x11->selection_request;
+        x11->selection_request = selection_request->next;
+        free(selection_request);
         vdagent_x11_handle_selection_request(x11);
+    }
 }
 
 static void vdagent_x11_send_targets(struct vdagent_x11 *x11, XEvent *event)
