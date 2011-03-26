@@ -466,7 +466,6 @@ static void udscs_read_complete(struct udscs_connection **connp)
             return;
     }
 
-    free(conn->data.buf);
     conn->header_read = 0;
     memset(&conn->data, 0, sizeof(conn->data));
 }

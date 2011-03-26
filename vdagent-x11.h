@@ -41,7 +41,7 @@ void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
     uint32_t type_count);
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type);
 void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
-    const uint8_t *data, uint32_t size);
+    uint8_t *data, uint32_t size);
 void vdagent_x11_clipboard_release(struct vdagent_x11 *x11);
 
 #endif

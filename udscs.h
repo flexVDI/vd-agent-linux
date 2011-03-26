@@ -42,7 +42,7 @@ typedef void (*udscs_connect_callback)(struct udscs_connection *conn);
    received. The callback may call udscs_destroy_connection, in which case
    *connp must be made NULL (which udscs_destroy_connection takes care of) */
 typedef void (*udscs_read_callback)(struct udscs_connection **connp,
-    struct udscs_message_header *header, const uint8_t *data);
+    struct udscs_message_header *header, uint8_t *data);
 /* Callback type for udscs_server_for_all_clients. Clients can be disconnected
    from this callback just like with a read callback. */
 typedef int (*udscs_for_all_clients_callback)(struct udscs_connection **connp,

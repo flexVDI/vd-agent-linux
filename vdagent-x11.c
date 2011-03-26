@@ -905,7 +905,7 @@ void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
 }
 
 void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
-    const uint8_t *data, uint32_t size)
+    uint8_t *data, uint32_t size)
 {
     Atom prop;
     XEvent *event;
@@ -914,6 +914,7 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
     if (!x11->selection_request) {
         fprintf(x11->errfile, "received clipboard data without an outstanding"
                               "selection request, ignoring\n");
+        free(data);
         return;
     }
 
@@ -924,6 +925,7 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
         fprintf(x11->errfile, "expecting type %u clipboard data got %u\n",
                 type_from_event, type);
         vdagent_x11_send_selection_notify(x11, None, 1);
+        free(data);
         return;
     }
 
@@ -936,6 +938,7 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
                     event->xselectionrequest.target, 8, PropModeReplace,
                     data, size);
     vdagent_x11_send_selection_notify(x11, prop, 1);
+    free(data);
 }
 
 void vdagent_x11_clipboard_release(struct vdagent_x11 *x11)

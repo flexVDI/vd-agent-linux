@@ -466,7 +466,7 @@ void agent_disconnect(struct udscs_connection *conn)
 }
 
 void agent_read_complete(struct udscs_connection **connp,
-    struct udscs_message_header *header, const uint8_t *data)
+    struct udscs_message_header *header, uint8_t *data)
 {
     struct agent_data *agent_data = udscs_get_user_data(*connp);
 
@@ -497,6 +497,7 @@ void agent_read_complete(struct udscs_connection **connp,
         fprintf(logfile, "unknown message from vdagent: %u, ignoring\n",
                 header->type);
     }
+    free(data);
 }
 
 /* main */

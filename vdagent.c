@@ -42,29 +42,36 @@ static FILE *logfile = NULL;
 static int quit = 0;
 
 void daemon_read_complete(struct udscs_connection **connp,
-    struct udscs_message_header *header, const uint8_t *data)
+    struct udscs_message_header *header, uint8_t *data)
 {
     switch (header->type) {
     case VDAGENTD_MONITORS_CONFIG:
         vdagent_x11_set_monitor_config(x11, (VDAgentMonitorsConfig *)data);
+        free(data);
         break;
     case VDAGENTD_CLIPBOARD_REQUEST:
         vdagent_x11_clipboard_request(x11, header->opaque);
+        free(data);
         break;
     case VDAGENTD_CLIPBOARD_GRAB:
         vdagent_x11_clipboard_grab(x11, (uint32_t *)data,
                                    header->size / sizeof(uint32_t));
+        free(data);
         break;
     case VDAGENTD_CLIPBOARD_DATA:
         vdagent_x11_clipboard_data(x11, header->opaque, data, header->size);
+        /* vdagent_x11_clipboard_data takes ownership of the data (or frees
+           it immediately) */
         break;
     case VDAGENTD_CLIPBOARD_RELEASE:
         vdagent_x11_clipboard_release(x11);
+        free(data);
         break;
     default:
         if (verbose)
             fprintf(logfile, "Unknown message from vdagentd type: %d\n",
                     header->type);
+        free(data);
     }
 }
 
