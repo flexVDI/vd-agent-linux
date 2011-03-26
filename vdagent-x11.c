@@ -205,11 +205,11 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
 {
     /* Clear pending requests and clipboard data */
     if (x11->selection_request) {
-         fprintf(x11->errfile,
-                 "selection requests pending on clipboard ownership change, "
-                 "clearing");
-         while (x11->selection_request)
-             vdagent_x11_send_selection_notify(x11, None, 0);
+        fprintf(x11->errfile,
+                "selection requests pending on clipboard ownership change, "
+                "clearing");
+        while (x11->selection_request)
+            vdagent_x11_send_selection_notify(x11, None, 0);
     }
     if (x11->clipboard_request_target != None) {
         fprintf(x11->errfile,
