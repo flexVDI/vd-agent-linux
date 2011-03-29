@@ -200,6 +200,14 @@ int vdagent_x11_get_fd(struct vdagent_x11 *x11)
     return x11->fd;
 }
 
+static void vdagent_x11_next_selection_request(struct vdagent_x11 *x11)
+{
+    struct vdagent_x11_selection_request *selection_request;
+    selection_request = x11->selection_request;
+    x11->selection_request = selection_request->next;
+    free(selection_request);
+}
+
 static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     int new_owner)
 {
@@ -209,11 +217,8 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
                 "selection requests pending on clipboard ownership change, "
                 "clearing");
         while (x11->selection_request) {
-            struct vdagent_x11_selection_request *selection_request;
             vdagent_x11_send_selection_notify(x11, None, 0);
-            selection_request = x11->selection_request;
-            x11->selection_request = selection_request->next;
-            free(selection_request);
+            vdagent_x11_next_selection_request(x11);
         }
     }
     if (x11->clipboard_request_target != None) {
@@ -703,7 +708,6 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
     Atom prop, int process_next_req)
 {
     XEvent res, *event = &x11->selection_request->event;
-    struct vdagent_x11_selection_request *selection_request;
 
     res.xselection.property = prop;
     res.xselection.type = SelectionNotify;
@@ -716,9 +720,7 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
     XFlush(x11->display);
 
     if (process_next_req) {
-        selection_request = x11->selection_request;
-        x11->selection_request = selection_request->next;
-        free(selection_request);
+        vdagent_x11_next_selection_request(x11);
         vdagent_x11_handle_selection_request(x11);
     }
 }
