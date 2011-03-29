@@ -105,6 +105,8 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
 static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
                                               Atom prop,
                                               int process_next_req);
+static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
+                                            int new_owner);
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     FILE *errfile, int verbose)
@@ -191,6 +193,7 @@ void vdagent_x11_destroy(struct vdagent_x11 *x11)
     if (!x11)
         return;
 
+    vdagent_x11_set_clipboard_owner(x11, owner_none);
     XCloseDisplay(x11->display);
     free(x11);
 }
