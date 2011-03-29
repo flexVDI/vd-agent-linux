@@ -181,7 +181,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->height = attrib.height;
     vdagent_x11_send_daemon_guest_xorg_res(x11);
 
-    /* No need for XFlush as XGetWindowAttributes does an implicit Xflush */
+    /* No need for XFlush as XGetWindowAttributes does an implicit XFlush */
 
     return x11;
 }
