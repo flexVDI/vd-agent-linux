@@ -251,13 +251,6 @@ int vdagent_x11_get_fd(struct vdagent_x11 *x11)
 static void vdagent_x11_next_selection_request(struct vdagent_x11 *x11)
 {
     struct vdagent_x11_selection_request *selection_request;
-
-    free(x11->selection_req_data);
-    x11->selection_req_data = NULL;
-    x11->selection_req_data_pos = 0;
-    x11->selection_req_data_size = 0;
-    x11->selection_req_atom = None;
-
     selection_request = x11->selection_req;
     x11->selection_req = selection_request->next;
     free(selection_request);
@@ -284,6 +277,11 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
             vdagent_x11_next_selection_request(x11);
         }
     }
+    free(x11->selection_req_data);
+    x11->selection_req_data = NULL;
+    x11->selection_req_data_pos = 0;
+    x11->selection_req_data_size = 0;
+    x11->selection_req_atom = None;
     if (x11->conversion_req) {
         fprintf(x11->errfile,
                 "client clipboard request pending on clipboard ownership "
@@ -968,6 +966,11 @@ static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
        incr transfer is done. Hence we do not check if we've send all data
        but instead check we've send the final 0 sized XChangeProperty. */
     if (len == 0) {
+        free(x11->selection_req_data);
+        x11->selection_req_data = NULL;
+        x11->selection_req_data_pos = 0;
+        x11->selection_req_data_size = 0;
+        x11->selection_req_atom = None;
         vdagent_x11_next_selection_request(x11);
         vdagent_x11_handle_selection_request(x11);
     }
