@@ -19,10 +19,17 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Note *all* X11 calls in this file which do not wait for a result must be
-   followed by an XFlush, given that the X11 code pumping the event loop
-   (and thus flushing queued writes) is only called when there is data to be
-   read from the X11 socket. */
+/* Note: Our event loop is only called when there is data to be read from the
+   X11 socket. If events have arrived and have already been read by libX11 from
+   the socket triggered by other libX11 calls from this file, the select for
+   read in the main loop, won't see these and our event loop won't get called!
+   
+   Thus we must make sure that all queued events have been consumed, whenever
+   we return to the main loop. IOW all (externally callable) functions in this
+   file must end with calling XPending and consuming all queued events.
+   
+   Calling XPending when-ever we return to the mainloop also ensures any
+   pending writes are flushed. */
 
 #include <stdlib.h>
 #include <limits.h>
@@ -183,7 +190,8 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->height = attrib.height;
     vdagent_x11_send_daemon_guest_xorg_res(x11);
 
-    /* No need for XFlush as XGetWindowAttributes does an implicit XFlush */
+    /* Flush output buffers and consume any pending events */
+    vdagent_x11_do_read(x11);
 
     return x11;
 }
@@ -292,7 +300,6 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
         XConvertSelection(x11->display, x11->clipboard_atom, x11->targets_atom,
                           x11->targets_atom, x11->selection_window,
                           CurrentTime);
-        XFlush(x11->display);
         x11->expected_targets_notifies++;
         return;
     }
@@ -467,12 +474,10 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
             XSelectInput(x11->display, x11->selection_window,
                          PropertyChangeMask);
             XDeleteProperty(x11->display, x11->selection_window, prop);
-            XFlush(x11->display);
             XFree(data);
             return 0; /* Wait for more data */
         }
         XDeleteProperty(x11->display, x11->selection_window, prop);
-        XFlush(x11->display);
     }
 
     if (type_ret != type) {
@@ -720,7 +725,6 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
     res.xselection.target = event->xselectionrequest.target;
     res.xselection.time = event->xselectionrequest.time;
     XSendEvent(x11->display, event->xselectionrequest.requestor, 0, 0, &res);
-    XFlush(x11->display);
 
     if (process_next_req) {
         vdagent_x11_next_selection_request(x11);
@@ -854,10 +858,12 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     XRRSetScreenConfig(x11->display, config, x11->root_window, best,
                        rotation, CurrentTime);
     XRRFreeScreenConfigInfo(config);
-    XFlush(x11->display);
     x11->width = sizes[best].width;
     x11->height = sizes[best].height;
     vdagent_x11_send_daemon_guest_xorg_res(x11);
+
+    /* Flush output buffers and consume any pending events */
+    vdagent_x11_do_read(x11);
 }
 
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
@@ -889,7 +895,9 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
     x11->clipboard_request_target = target;
     XConvertSelection(x11->display, x11->clipboard_atom, target,
                       x11->clipboard_atom, x11->selection_window, CurrentTime);
-    XFlush(x11->display);
+
+    /* Flush output buffers and consume any pending events */
+    vdagent_x11_do_read(x11);
 }
 
 void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
@@ -905,8 +913,10 @@ void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
 
     XSetSelectionOwner(x11->display, x11->clipboard_atom,
                        x11->selection_window, CurrentTime);
-    XFlush(x11->display);
     vdagent_x11_set_clipboard_owner(x11, owner_client);
+
+    /* Flush output buffers and consume any pending events */
+    vdagent_x11_do_read(x11);
 }
 
 void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
@@ -931,6 +941,9 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
                 type_from_event, type);
         vdagent_x11_send_selection_notify(x11, None, 1);
         free(data);
+
+        /* Flush output buffers and consume any pending events */
+        vdagent_x11_do_read(x11);
         return;
     }
 
@@ -944,6 +957,9 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
                     data, size);
     vdagent_x11_send_selection_notify(x11, prop, 1);
     free(data);
+
+    /* Flush output buffers and consume any pending events */
+    vdagent_x11_do_read(x11);
 }
 
 void vdagent_x11_clipboard_release(struct vdagent_x11 *x11)
@@ -967,4 +983,7 @@ void vdagent_x11_clipboard_release(struct vdagent_x11 *x11)
 
     /* Note no need to do a set_clipboard_owner(owner_none) here, as that is
        already done by processing the XFixesSetSelectionOwnerNotify event. */
+
+    /* Flush output buffers and consume any pending events */
+    vdagent_x11_do_read(x11);
 }
