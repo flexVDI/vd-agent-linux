@@ -44,9 +44,22 @@
 
 enum { owner_none, owner_guest, owner_client };
 
+/* X11 terminology is confusing a selection request is a request from an
+   app to get clipboard data from us, so iow from the spice client through
+   the vdagent channel. We handle these one at a time and queue any which
+   come in while we are still handling the current one. */
 struct vdagent_x11_selection_request {
     XEvent event;
     struct vdagent_x11_selection_request *next;
+};
+
+/* A conversion request is X11 speak for asking an other app to give its
+   clipboard data to us, we do these on behalf of the spice client to copy
+   data from the guest to the client. Like selection requests we process
+   these one at a time. */
+struct vdagent_x11_conversion_request {
+    Atom target;
+    struct vdagent_x11_conversion_request *next;
 };
 
 struct clipboard_format_tmpl {
@@ -96,10 +109,10 @@ struct vdagent_x11 {
     int expected_targets_notifies;
     int expect_property_notify;
     int clipboard_owner;
-    Atom clipboard_request_target;
     int clipboard_type_count;
     uint32_t clipboard_agent_types[256];
     Atom clipboard_x11_targets[256];
+    struct vdagent_x11_conversion_request *conversion_req;
     uint8_t *clipboard_data;
     uint32_t clipboard_data_size;
     uint32_t clipboard_data_space;
@@ -250,6 +263,14 @@ static void vdagent_x11_next_selection_request(struct vdagent_x11 *x11)
     free(selection_request);
 }
 
+static void vdagent_x11_next_conversion_request(struct vdagent_x11 *x11)
+{
+    struct vdagent_x11_conversion_request *conversion_req;
+    conversion_req = x11->conversion_req;
+    x11->conversion_req = conversion_req->next;
+    free(conversion_req);
+}
+
 static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     int new_owner)
 {
@@ -263,13 +284,15 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
             vdagent_x11_next_selection_request(x11);
         }
     }
-    if (x11->clipboard_request_target != None) {
+    if (x11->conversion_req) {
         fprintf(x11->errfile,
                 "client clipboard request pending on clipboard ownership "
                 "change, clearing\n");
-        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
-        x11->clipboard_request_target = None;
+        while (x11->conversion_req) {
+            udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
+                        VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
+            vdagent_x11_next_conversion_request(x11);
+        }
     }
     x11->clipboard_data_size = 0;
     x11->expect_property_notify = 0;
@@ -677,6 +700,17 @@ static Atom vdagent_x11_type_to_target(struct vdagent_x11 *x11, uint32_t type)
     return None;
 }
 
+static void vdagent_x11_handle_conversion_request(struct vdagent_x11 *x11)
+{
+    if (!x11->conversion_req) {
+        return;
+    }
+
+    XConvertSelection(x11->display, x11->clipboard_atom,
+                      x11->conversion_req->target,
+                      x11->clipboard_atom, x11->selection_window, CurrentTime);
+}
+
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event, int incr)
 {
@@ -684,20 +718,21 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     unsigned char *data = NULL;
     uint32_t type;
 
-    if (x11->clipboard_request_target == None) {
+    if (!x11->conversion_req) {
         fprintf(x11->errfile, "SelectionNotify received without a target\n");
         return;
     }
 
-    type  = vdagent_x11_target_to_type(x11, x11->clipboard_request_target);
+    type  = vdagent_x11_target_to_type(x11, x11->conversion_req->target);
     if (!incr &&
-             event->xselection.target != x11->clipboard_request_target &&
+             event->xselection.target != x11->conversion_req->target &&
              event->xselection.target != x11->incr_atom)
         fprintf(x11->errfile, "Requested %s target got %s\n",
-                vdagent_x11_get_atom_name(x11, x11->clipboard_request_target),
+                vdagent_x11_get_atom_name(x11, x11->conversion_req->target),
                 vdagent_x11_get_atom_name(x11, event->xselection.target));
     else
-        len = vdagent_x11_get_selection(x11, event, x11->clipboard_request_target,
+        len = vdagent_x11_get_selection(x11, event,
+                                        x11->conversion_req->target,
                                         x11->clipboard_atom, 8, &data, incr);
     if (len == 0) /* waiting for more data? */
         return;
@@ -707,8 +742,10 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     }
 
     udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, type, 0, data, len);
-    x11->clipboard_request_target = None;
     vdagent_x11_get_selection_free(x11, data, incr);
+
+    vdagent_x11_next_conversion_request(x11);
+    vdagent_x11_handle_conversion_request(x11);
 }
 
 static Atom atom_lists_overlap(Atom *atoms1, Atom *atoms2, int l1, int l2)
@@ -1000,6 +1037,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
 {
     Atom target;
+    struct vdagent_x11_conversion_request *req, *new_req;
 
     if (x11->clipboard_owner != owner_guest) {
         fprintf(x11->errfile,
@@ -1016,19 +1054,30 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
         return;
     }
 
-    if (x11->clipboard_request_target) {
+    new_req = malloc(sizeof(*new_req));
+    if (!new_req) {
         fprintf(x11->errfile,
-                "XConvertSelection request is already pending\n");
-        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
+                "out of memory on client clipboard request, ignoring.\n");
         return;
     }
-    x11->clipboard_request_target = target;
-    XConvertSelection(x11->display, x11->clipboard_atom, target,
-                      x11->clipboard_atom, x11->selection_window, CurrentTime);
 
-    /* Flush output buffers and consume any pending events */
-    vdagent_x11_do_read(x11);
+    new_req->target = target;
+    new_req->next = NULL;
+
+    if (!x11->conversion_req) {
+        x11->conversion_req = new_req;
+        vdagent_x11_handle_conversion_request(x11);
+        /* Flush output buffers and consume any pending events */
+        vdagent_x11_do_read(x11);
+        return;
+    }
+
+    /* maybe we should limit the conversion_request stack depth ? */
+    req = x11->conversion_req;
+    while (req->next)
+        req = req->next;
+
+    req->next = new_req;
 }
 
 void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint32_t *types,
