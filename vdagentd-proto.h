@@ -30,8 +30,8 @@ enum {
     VDAGENTD_MONITORS_CONFIG, /* daemon -> client, VDAgentMonitorsConfig
                                  followed by num_monitors VDAgentMonConfig-s */
     VDAGENTD_CLIPBOARD_GRAB,    /* data is array of supported types */
-    VDAGENTD_CLIPBOARD_REQUEST, /* opaque = type */
-    VDAGENTD_CLIPBOARD_DATA,    /* opaque = type, data = data */
+    VDAGENTD_CLIPBOARD_REQUEST, /* arg1 = type */
+    VDAGENTD_CLIPBOARD_DATA,    /* arg1 = type, data = data */
     VDAGENTD_CLIPBOARD_RELEASE, /* no data */
     VDAGENTD_NO_MESSAGES /* Must always be last */
 };

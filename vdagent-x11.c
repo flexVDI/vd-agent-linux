@@ -269,7 +269,7 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
                 "client clipboard request pending on clipboard ownership "
                 "change, clearing\n");
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
         x11->clipboard_request_target = None;
     }
     x11->clipboard_data_size = 0;
@@ -279,7 +279,8 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
         /* When going from owner_guest to owner_none we need to send a
            clipboard release message to the client */
         if (x11->clipboard_owner == owner_guest)
-           udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_RELEASE, 0, NULL, 0);
+           udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_RELEASE, 0, 0,
+                       NULL, 0);
 
         x11->clipboard_type_count = 0;
     }
@@ -477,7 +478,7 @@ static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
     res.width  = x11->width;
     res.height = x11->height;
 
-    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, 0,
+    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, 0, 0,
                 (uint8_t *)&res, sizeof(res));
 }
 
@@ -706,7 +707,7 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
         len = 0;
     }
 
-    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, type, data, len);
+    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, type, 0, data, len);
     x11->clipboard_request_target = None;
     vdagent_x11_get_selection_free(x11, data, incr);
 }
@@ -784,7 +785,7 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
     }
 
     if (x11->clipboard_type_count) {
-        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, 0,
+        udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_GRAB, 0, 0,
                     (uint8_t *)x11->clipboard_agent_types,
                     x11->clipboard_type_count * sizeof(uint32_t));
         vdagent_x11_set_clipboard_owner(x11, owner_guest);
@@ -883,7 +884,7 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
         return;
     }
 
-    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_REQUEST, type, NULL, 0);
+    udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_REQUEST, type, 0, NULL, 0);
 }
 
 static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
@@ -999,14 +1000,14 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
         fprintf(x11->errfile,
                 "received clipboard req while not owning guest clipboard\n");
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
         return;
     }
 
     target = vdagent_x11_type_to_target(x11, type);
     if (target == None) {
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
         return;
     }
 
@@ -1014,7 +1015,7 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11, uint32_t type)
         fprintf(x11->errfile,
                 "XConvertSelection request is already pending\n");
         udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
         return;
     }
     x11->clipboard_request_target = target;

@@ -31,7 +31,8 @@ struct udscs_connection;
 struct udscs_server;
 struct udscs_message_header {
     uint32_t type;
-    uint32_t opaque;
+    uint32_t arg1;
+    uint32_t arg2;
     uint32_t size;  
 };
 
@@ -101,13 +102,13 @@ void udscs_client_handle_fds(struct udscs_connection **connp, fd_set *readfds,
 /* Queue a message for delivery to the client connected through conn.
 
    Returns 0 on success -1 on error (only happens when malloc fails) */
-int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
-        const uint8_t *data, uint32_t size);
+int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t arg1,
+        uint32_t arg2, const uint8_t *data, uint32_t size);
 
 /* Like udscs_write, but then send the message to all clients connected to
    the server */
 int udscs_server_write_all(struct udscs_server *server,
-        uint32_t type, uint32_t opaque,
+        uint32_t type, uint32_t arg1, uint32_t arg2,
         const uint8_t *data, uint32_t size);
 /* Call func for all clients connected to the server, passing through
    priv to all func calls. Returns the total of the return values from all

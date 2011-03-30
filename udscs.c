@@ -358,8 +358,8 @@ void udscs_client_handle_fds(struct udscs_connection **connp, fd_set *readfds,
         udscs_do_write(connp);
 }
 
-int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
-        const uint8_t *data, uint32_t size)
+int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t arg1,
+    uint32_t arg2, const uint8_t *data, uint32_t size)
 {
     struct udscs_buf *wbuf, *new_wbuf;
     struct udscs_message_header header;
@@ -378,7 +378,8 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
     }
 
     header.type = type;
-    header.opaque = opaque;
+    header.arg1 = arg1;
+    header.arg2 = arg2;
     header.size = size;
 
     memcpy(new_wbuf->buf, &header, sizeof(header));
@@ -386,12 +387,12 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
 
     if (conn->logfile) {
         if (type < conn->no_types)
-            fprintf(conn->logfile, "%p sent %s, opaque: %u, size %u\n",
-                    conn, conn->type_to_string[type], opaque, size);
+            fprintf(conn->logfile, "%p sent %s, arg1: %u, arg2: %u, size %u\n",
+                    conn, conn->type_to_string[type], arg1, arg2, size);
         else
             fprintf(conn->logfile,
-                    "%p sent invalid message %u, opaque: %u, size %u\n",
-                    conn, type, opaque, size);
+                   "%p sent invalid message %u, arg1: %u, arg2: %u, size %u\n",
+                   conn, type, arg1, arg2, size);
     }
 
     if (!conn->write_buf) {
@@ -410,14 +411,14 @@ int udscs_write(struct udscs_connection *conn, uint32_t type, uint32_t opaque,
 }
 
 int udscs_server_write_all(struct udscs_server *server,
-        uint32_t type, uint32_t opaque,
+        uint32_t type, uint32_t arg1, uint32_t arg2,
         const uint8_t *data, uint32_t size)
 {
     struct udscs_connection *conn;
 
     conn = server->connections_head.next;
     while (conn) {
-        if (udscs_write(conn, type, opaque, data, size))
+        if (udscs_write(conn, type, arg1, arg2, data, size))
             return -1;
         conn = conn->next;
     }
@@ -450,14 +451,15 @@ static void udscs_read_complete(struct udscs_connection **connp)
 
     if (conn->logfile) {
         if (conn->header.type < conn->no_types)
-            fprintf(conn->logfile, "%p received %s, opaque: %u, size %u\n",
+            fprintf(conn->logfile,
+                    "%p received %s, arg1: %u, arg2: %u, size %u\n",
                     conn, conn->type_to_string[conn->header.type],
-                    conn->header.opaque, conn->header.size);
+                    conn->header.arg1, conn->header.arg2, conn->header.size);
         else
             fprintf(conn->logfile,
-                    "%p received invalid message %u, opaque: %u, size %u\n",
-                    conn, conn->header.type, conn->header.opaque,
-                    conn->header.size);
+               "%p received invalid message %u, arg1: %u, arg2: %u, size %u\n",
+               conn, conn->header.type, conn->header.arg1, conn->header.arg2,
+               conn->header.size);
     }
 
     if (conn->read_callback) {

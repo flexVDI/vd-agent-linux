@@ -118,7 +118,7 @@ static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
     memcpy(mon_config, new_monitors, size);
 
     /* Send monitor config to currently connected agents */
-    udscs_server_write_all(server, VDAGENTD_MONITORS_CONFIG, 0,
+    udscs_server_write_all(server, VDAGENTD_MONITORS_CONFIG, 0, 0,
                            (uint8_t *)mon_config, size);
 
     /* Acknowledge reception of monitors config to spice server / client */
@@ -153,7 +153,7 @@ static void do_client_capabilities(struct vdagent_virtio_port *vport,
 static void do_client_clipboard(struct vdagent_virtio_port *vport,
     VDAgentMessage *message_header, uint8_t *message_data)
 {
-    uint32_t type = 0, opaque = 0, size = 0;
+    uint32_t type = 0, arg1 = 0, size = 0;
     uint8_t *data = NULL;
 
     if (!active_session_conn) {
@@ -173,13 +173,13 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
     case VD_AGENT_CLIPBOARD_REQUEST: {
         VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
         type = VDAGENTD_CLIPBOARD_REQUEST;
-        opaque = req->type;
+        arg1 = req->type;
         break;
     }
     case VD_AGENT_CLIPBOARD: {
         VDAgentClipboard *clipboard = (VDAgentClipboard *)message_data;
         type = VDAGENTD_CLIPBOARD_DATA;
-        opaque = clipboard->type;
+        arg1 = clipboard->type;
         size = message_header->size - sizeof(VDAgentClipboard);
         data = clipboard->data;
         break;
@@ -189,7 +189,7 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
         break;
     }
 
-    udscs_write(active_session_conn, type, opaque, data, size);
+    udscs_write(active_session_conn, type, arg1, 0, data, size);
 }
 
 int virtio_port_read_complete(
@@ -297,7 +297,7 @@ void do_agent_clipboard(struct udscs_connection *conn,
         agent_owns_clipboard = 1;
         break;
     case VDAGENTD_CLIPBOARD_REQUEST: {
-        VDAgentClipboardRequest req = { .type = header->opaque };
+        VDAgentClipboardRequest req = { .type = header->arg1 };
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_CLIPBOARD_REQUEST, 0,
                                   (uint8_t *)&req, sizeof(req));
@@ -313,7 +313,7 @@ void do_agent_clipboard(struct udscs_connection *conn,
                     "out of memory allocating clipboard (write)\n");
             return;
         }
-        clipboard->type = header->opaque;
+        clipboard->type = header->arg1;
         memcpy(clipboard->data, data, header->size);
 
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
@@ -335,7 +335,7 @@ error:
     if (header->type == VDAGENTD_CLIPBOARD_REQUEST) {
         /* Let the agent know no answer is coming */
         udscs_write(conn, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
     }
 }
 
@@ -449,8 +449,8 @@ void agent_connect(struct udscs_connection *conn)
     update_active_session_connection();
 
     if (mon_config)
-        udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, (uint8_t *)mon_config,
-                    sizeof(VDAgentMonitorsConfig) +
+        udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
+                    (uint8_t *)mon_config, sizeof(VDAgentMonitorsConfig) +
                     mon_config->num_of_monitors * sizeof(VDAgentMonConfig));
 }
 

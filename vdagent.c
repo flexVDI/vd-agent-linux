@@ -50,7 +50,7 @@ void daemon_read_complete(struct udscs_connection **connp,
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_REQUEST:
-        vdagent_x11_clipboard_request(x11, header->opaque);
+        vdagent_x11_clipboard_request(x11, header->arg1);
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_GRAB:
@@ -59,7 +59,7 @@ void daemon_read_complete(struct udscs_connection **connp,
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_DATA:
-        vdagent_x11_clipboard_data(x11, header->opaque, data, header->size);
+        vdagent_x11_clipboard_data(x11, header->arg1, data, header->size);
         /* vdagent_x11_clipboard_data takes ownership of the data (or frees
            it immediately) */
         break;
