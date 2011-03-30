@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <string.h>
+#include <assert.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
@@ -90,6 +91,7 @@ struct vdagent_x11 {
     int has_xrandr;
     int has_xfixes;
     int xfixes_event_base;
+    int max_prop_size;
     int expected_targets_notifies;
     int expect_property_notify;
     int clipboard_owner;
@@ -101,6 +103,10 @@ struct vdagent_x11 {
     uint32_t clipboard_data_size;
     uint32_t clipboard_data_space;
     struct vdagent_x11_selection_request *selection_request;
+    uint8_t *selection_req_data;
+    uint32_t selection_req_data_pos;
+    uint32_t selection_req_data_size;
+    Atom selection_req_atom;
 };
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
@@ -109,6 +115,8 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
                                               XEvent *event, int incr);
+static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
+                                                      XEvent *del_event);
 static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
                                               Atom prop,
                                               int process_next_req);
@@ -181,6 +189,16 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         fprintf(x11->errfile,
                 "no xfixes, no guest -> client copy paste support\n");
 
+    x11->max_prop_size = XExtendedMaxRequestSize(x11->display);
+    if (x11->max_prop_size) {
+        x11->max_prop_size -= 100;
+    } else {
+        x11->max_prop_size = XMaxRequestSize(x11->display) - 100;
+    }
+    /* Be a good X11 citizen and maximize the amount of data we send at once */
+    if (x11->max_prop_size > 262144)
+        x11->max_prop_size = 262144;
+
     /* Catch resolution changes */
     XSelectInput(x11->display, x11->root_window, StructureNotifyMask);
 
@@ -214,6 +232,13 @@ int vdagent_x11_get_fd(struct vdagent_x11 *x11)
 static void vdagent_x11_next_selection_request(struct vdagent_x11 *x11)
 {
     struct vdagent_x11_selection_request *selection_request;
+
+    free(x11->selection_req_data);
+    x11->selection_req_data = NULL;
+    x11->selection_req_data_pos = 0;
+    x11->selection_req_data_size = 0;
+    x11->selection_req_atom = None;
+
     selection_request = x11->selection_request;
     x11->selection_request = selection_request->next;
     free(selection_request);
@@ -329,15 +354,21 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
         handled = 1;
         break;
     case PropertyNotify:
+        if (x11->expect_property_notify &&
+                                event.xproperty.state == PropertyNewValue) {
+            if (event.xproperty.atom == x11->targets_atom) {
+                vdagent_x11_handle_targets_notify(x11, &event, 1);
+            } else {
+                vdagent_x11_handle_selection_notify(x11, &event, 1);
+            }
+        }
+        if (x11->selection_req_data && 
+                                 event.xproperty.state == PropertyDelete) {
+            vdagent_x11_handle_property_delete_notify(x11, &event);
+        }
+        /* Always mark as handled, since we cannot unselect input for property
+           notifications once we are done with handling the incr transfer. */
         handled = 1;
-        if (!x11->expect_property_notify ||
-                event.xproperty.state != PropertyNewValue)
-            break;
-
-        if (event.xproperty.atom == x11->targets_atom)
-            vdagent_x11_handle_targets_notify(x11, &event, 1);
-        else
-            vdagent_x11_handle_selection_notify(x11, &event, 1);
         break;
     case SelectionClear:
         /* Do nothing the clipboard ownership will get updated through
@@ -805,6 +836,50 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
     udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_REQUEST, type, NULL, 0);
 }
 
+static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
+                                                      XEvent *del_event)
+{
+    XEvent *sel_event;
+    int len;
+
+    assert(x11->selection_request);
+    sel_event = &x11->selection_request->event;
+    if (del_event->xproperty.window != sel_event->xselectionrequest.requestor
+            || del_event->xproperty.atom != x11->selection_req_atom) {
+        return;
+    }
+
+    len = x11->selection_req_data_size - x11->selection_req_data_pos;
+    if (len > x11->max_prop_size) {
+        len = x11->max_prop_size;
+    }
+
+    if (x11->verbose) {
+        if (len) {
+            fprintf(x11->errfile, "Sending %d-%d/%d bytes of clipboard data\n",
+                    x11->selection_req_data_pos,
+                    x11->selection_req_data_pos + len - 1,
+                    x11->selection_req_data_size);
+        } else {
+            fprintf(x11->errfile, "Ending incr send of clipboard data\n");
+        }
+    }
+    XChangeProperty(x11->display, sel_event->xselectionrequest.requestor,
+                    x11->selection_req_atom,
+                    sel_event->xselectionrequest.target, 8, PropModeReplace,
+                    x11->selection_req_data + x11->selection_req_data_pos,
+                    len);
+    x11->selection_req_data_pos += len;
+
+    /* Note we must explictly send a 0 sized XChangeProperty to signal the
+       incr transfer is done. Hence we do not check if we've send all data
+       but instead check we've send the final 0 sized XChangeProperty. */
+    if (len == 0) {
+        vdagent_x11_next_selection_request(x11);
+        vdagent_x11_handle_selection_request(x11);
+    }
+}
+
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                                     VDAgentMonitorsConfig *mon_config)
 {
@@ -926,9 +1001,20 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
     XEvent *event;
     uint32_t type_from_event;
 
+    if (x11->selection_req_data) {
+        if (type || size) {
+            fprintf(x11->errfile, "received clipboard data while still sending"
+                                  " data from previous request, ignoring\n");
+        }
+        free(data);
+        return;
+    }
+
     if (!x11->selection_request) {
-        fprintf(x11->errfile, "received clipboard data without an outstanding"
-                              "selection request, ignoring\n");
+        if (type || size) {
+            fprintf(x11->errfile, "received clipboard data without an "
+                                  "outstanding selection request, ignoring\n");
+        }
         free(data);
         return;
     }
@@ -951,12 +1037,27 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint32_t type,
     if (prop == None)
         prop = event->xselectionrequest.target;
 
-    /* FIXME: use INCR for large data transfers */
-    XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
-                    event->xselectionrequest.target, 8, PropModeReplace,
-                    data, size);
-    vdagent_x11_send_selection_notify(x11, prop, 1);
-    free(data);
+    if (size > x11->max_prop_size) {
+        unsigned long len = size;
+        if (x11->verbose)
+            fprintf(x11->errfile, "Starting incr send of clipboard data\n");
+        x11->selection_req_data = data;
+        x11->selection_req_data_pos = 0;
+        x11->selection_req_data_size = size;
+        x11->selection_req_atom = prop;
+        XSelectInput(x11->display, event->xselectionrequest.requestor,
+                     PropertyChangeMask);
+        XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
+                        x11->incr_atom, 32, PropModeReplace,
+                        (unsigned char*)&len, 1);
+        vdagent_x11_send_selection_notify(x11, prop, 0);
+    } else {
+        XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
+                        event->xselectionrequest.target, 8, PropModeReplace,
+                        data, size);
+        vdagent_x11_send_selection_notify(x11, prop, 1);
+        free(data);
+    }
 
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);
