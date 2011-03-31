@@ -50,21 +50,22 @@ void daemon_read_complete(struct udscs_connection **connp,
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_REQUEST:
-        vdagent_x11_clipboard_request(x11, header->arg1);
+        vdagent_x11_clipboard_request(x11, header->arg1, header->arg2);
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_GRAB:
-        vdagent_x11_clipboard_grab(x11, (uint32_t *)data,
+        vdagent_x11_clipboard_grab(x11, header->arg1, (uint32_t *)data,
                                    header->size / sizeof(uint32_t));
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_DATA:
-        vdagent_x11_clipboard_data(x11, header->arg1, data, header->size);
+        vdagent_x11_clipboard_data(x11, header->arg1, header->arg2,
+                                   data, header->size);
         /* vdagent_x11_clipboard_data takes ownership of the data (or frees
            it immediately) */
         break;
     case VDAGENTD_CLIPBOARD_RELEASE:
-        vdagent_x11_clipboard_release(x11);
+        vdagent_x11_clipboard_release(x11, header->arg1);
         free(data);
         break;
     default:

@@ -59,7 +59,7 @@ static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
 static const char *active_session = NULL;
 static struct udscs_connection *active_session_conn = NULL;
-static int agent_owns_clipboard = 0;
+static int agent_owns_clipboard[256] = { 0, };
 static FILE *logfile = NULL;
 static int quit = 0;
 static int retval = 0;
@@ -85,6 +85,7 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MONITORS_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_SELECTION);
 
     vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
@@ -151,10 +152,10 @@ static void do_client_capabilities(struct vdagent_virtio_port *vport,
 }
 
 static void do_client_clipboard(struct vdagent_virtio_port *vport,
-    VDAgentMessage *message_header, uint8_t *message_data)
+    VDAgentMessage *message_header, uint8_t *data)
 {
-    uint32_t type = 0, arg1 = 0, size = 0;
-    uint8_t *data = NULL;
+    uint32_t msg_type = 0, data_type = 0, size = message_header->size;
+    uint8_t selection = VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD;
 
     if (!active_session_conn) {
         fprintf(logfile,
@@ -163,33 +164,43 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
         return;
     }
 
+    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+      selection = data[0];
+      data += 4;
+      size -= 4;
+    }
+
     switch (message_header->type) {
     case VD_AGENT_CLIPBOARD_GRAB:
-        type = VDAGENTD_CLIPBOARD_GRAB;
-        data = message_data;
-        size = message_header->size;
-        agent_owns_clipboard = 0;
+        msg_type = VDAGENTD_CLIPBOARD_GRAB;
+        agent_owns_clipboard[selection] = 0;
         break;
     case VD_AGENT_CLIPBOARD_REQUEST: {
-        VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)message_data;
-        type = VDAGENTD_CLIPBOARD_REQUEST;
-        arg1 = req->type;
+        VDAgentClipboardRequest *req = (VDAgentClipboardRequest *)data;
+        msg_type = VDAGENTD_CLIPBOARD_REQUEST;
+        data_type = req->type;
+        data = NULL;
+        size = 0;
         break;
     }
     case VD_AGENT_CLIPBOARD: {
-        VDAgentClipboard *clipboard = (VDAgentClipboard *)message_data;
-        type = VDAGENTD_CLIPBOARD_DATA;
-        arg1 = clipboard->type;
-        size = message_header->size - sizeof(VDAgentClipboard);
+        VDAgentClipboard *clipboard = (VDAgentClipboard *)data;
+        msg_type = VDAGENTD_CLIPBOARD_DATA;
+        data_type = clipboard->type;
+        size = size - sizeof(VDAgentClipboard);
         data = clipboard->data;
         break;
     }
     case VD_AGENT_CLIPBOARD_RELEASE:
-        type = VDAGENTD_CLIPBOARD_RELEASE;
+        msg_type = VDAGENTD_CLIPBOARD_RELEASE;
+        data = NULL;
+        size = 0;
         break;
     }
 
-    udscs_write(active_session_conn, type, arg1, 0, data, size);
+    udscs_write(active_session_conn, msg_type, selection, data_type,
+                data, size);
 }
 
 int virtio_port_read_complete(
@@ -250,8 +261,13 @@ int virtio_port_read_complete(
         case VD_AGENT_CLIPBOARD:
             min_size = sizeof(VDAgentClipboard); break;
         }
-        if (message_header->size < min_size)
+        if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                    VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+            min_size += 4;
+        }
+        if (message_header->size < min_size) {
             goto size_error;
+        }
         do_client_clipboard(vport, message_header, data);
         break;
     default:
@@ -269,9 +285,13 @@ size_error:
 }
 
 /* vdagentd <-> vdagent communication handling */
-void do_agent_clipboard(struct udscs_connection *conn,
-    struct udscs_message_header *header, const uint8_t *data)
+int do_agent_clipboard(struct udscs_connection *conn,
+        struct udscs_message_header *header, const uint8_t *data)
 {
+    const uint8_t *msg;
+    uint8_t *buf = NULL, selection = header->arg1;
+    uint32_t msg_type = 0, data_type = -1, size = header->size;
+
     if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
                                  VD_AGENT_CAP_CLIPBOARD_BY_DEMAND))
         goto error;
@@ -282,61 +302,91 @@ void do_agent_clipboard(struct udscs_connection *conn,
                          "which is not in the active session?\n");
         goto error;
     }
-    
+
     if (!virtio_port) {
         fprintf(logfile,
                 "Clipboard request from agent but no client connection\n");
         goto error;
     }
 
+    if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                 VD_AGENT_CAP_CLIPBOARD_SELECTION) &&
+            selection != VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD) {
+        goto error;
+    }
+
     switch (header->type) {
     case VDAGENTD_CLIPBOARD_GRAB:
-        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
-                                  VD_AGENT_CLIPBOARD_GRAB, 0,
-                                  data, header->size);
-        agent_owns_clipboard = 1;
+        msg_type = VD_AGENT_CLIPBOARD_GRAB;
+        agent_owns_clipboard[selection] = 1;
         break;
-    case VDAGENTD_CLIPBOARD_REQUEST: {
-        VDAgentClipboardRequest req = { .type = header->arg1 };
-        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
-                                  VD_AGENT_CLIPBOARD_REQUEST, 0,
-                                  (uint8_t *)&req, sizeof(req));
+    case VDAGENTD_CLIPBOARD_REQUEST:
+        msg_type = VD_AGENT_CLIPBOARD_REQUEST;
+        data_type = header->arg2;
+        size = 0;
         break;
-    }
-    case VDAGENTD_CLIPBOARD_DATA: {
-        VDAgentClipboard *clipboard;
-        uint32_t size = sizeof(*clipboard) + header->size;
-
-        clipboard = calloc(1, size);
-        if (!clipboard) {
-            fprintf(logfile,
-                    "out of memory allocating clipboard (write)\n");
-            return;
-        }
-        clipboard->type = header->arg1;
-        memcpy(clipboard->data, data, header->size);
-
-        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
-                                  VD_AGENT_CLIPBOARD, 0,
-                                  (uint8_t *)clipboard, size);
-        free(clipboard);
+    case VDAGENTD_CLIPBOARD_DATA:
+        msg_type = VD_AGENT_CLIPBOARD;
+        data_type = header->arg2;
         break;
-    }
     case VDAGENTD_CLIPBOARD_RELEASE:
-        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
-                                  VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
-        agent_owns_clipboard = 0;
+        msg_type = VD_AGENT_CLIPBOARD_RELEASE;
+        size = 0;
+        agent_owns_clipboard[selection] = 0;
         break;
     }
 
-    return;
+    if (size != header->size) {
+        fprintf(logfile,
+            "unexpected extra data in clipboard msg, disconnecting agent\n");
+        return -1;
+    }
+
+    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+        size += 4;
+    }
+    if (data_type != -1) {
+        size += 4;
+    }
+    if (size != header->size) {
+        uint8_t *p;
+        buf = p = malloc(size);
+        if (!buf) {
+            fprintf(logfile, "out of memory allocating clipboard (write)\n");
+            return -1;
+        }
+        if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                    VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+            p[0] = selection;
+            p[1] = 0;
+            p[2] = 0;
+            p[3] = 0;
+            p += 4;
+        }
+        if (data_type != -1) {
+            uint32_t *u = (uint32_t *)p;
+            u[0] = data_type;
+            p += 4;
+        }
+        memcpy(p, data, header->size);
+        msg = buf;
+    } else {
+        msg = data;
+    }
+
+    vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT, msg_type,
+                              0, msg, size);
+    free(buf);
+    return 0;
 
 error:
     if (header->type == VDAGENTD_CLIPBOARD_REQUEST) {
         /* Let the agent know no answer is coming */
         udscs_write(conn, VDAGENTD_CLIPBOARD_DATA,
-                    VD_AGENT_CLIPBOARD_NONE, 0, NULL, 0);
+                    selection, VD_AGENT_CLIPBOARD_NONE, NULL, 0);
     }
+    return 0;
 }
 
 /* When we open the vdagent virtio channel, the server automatically goes into
@@ -346,7 +396,8 @@ error:
    are met it sets the uinput tablet device's resolution and opens the virtio
    channel (if it is not already open). If these conditions are not met, it
    closes both. */
-static void check_xorg_resolution(void) {
+static void check_xorg_resolution(void)
+{
     struct agent_data *agent_data = udscs_get_user_data(active_session_conn);
 
     if (agent_data && agent_data->width) {
@@ -405,6 +456,19 @@ static int connection_matches_active_session(struct udscs_connection **connp,
     return 1;
 }
 
+void release_clipboards(void)
+{
+    uint8_t sel;
+
+    for (sel = 0; sel < VD_AGENT_CLIPBOARD_SELECTION_SECONDARY; ++sel) {
+        if (agent_owns_clipboard[sel] && virtio_port) {
+            vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                      VD_AGENT_CLIPBOARD_RELEASE, 0, &sel, 1);
+        }
+        agent_owns_clipboard[sel] = 0;
+    }
+}
+
 void update_active_session_connection(void)
 {
     struct udscs_connection *new_conn = NULL;
@@ -423,10 +487,7 @@ void update_active_session_connection(void)
 
     active_session_conn = new_conn;
 
-    if (agent_owns_clipboard && virtio_port)
-        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
-                                  VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
-    agent_owns_clipboard = 0;
+    release_clipboards();
 
     check_xorg_resolution();    
 }
@@ -491,7 +552,10 @@ void agent_read_complete(struct udscs_connection **connp,
     case VDAGENTD_CLIPBOARD_REQUEST:
     case VDAGENTD_CLIPBOARD_DATA:
     case VDAGENTD_CLIPBOARD_RELEASE:
-        do_agent_clipboard(*connp, header, data);
+        if (do_agent_clipboard(*connp, header, data)) {
+            udscs_destroy_connection(connp);
+            return;
+        }
         break;
     default:
         fprintf(logfile, "unknown message from vdagent: %u, ignoring\n",
@@ -687,9 +751,7 @@ int main(int argc, char *argv[])
 
     main_loop();
 
-    if (agent_owns_clipboard && virtio_port)
-        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
-                                  VD_AGENT_CLIPBOARD_RELEASE, 0, NULL, 0);
+    release_clipboards();
 
     vdagentd_uinput_destroy(&uinput);
     vdagent_virtio_port_flush(&virtio_port);
