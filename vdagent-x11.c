@@ -128,7 +128,7 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event, int incr);
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
-                                              XEvent *event, int incr);
+                                              XEvent *event);
 static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
                                                       XEvent *del_event);
 static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
@@ -418,7 +418,7 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
         break;
     case SelectionNotify:
         if (event.xselection.target == x11->targets_atom)
-            vdagent_x11_handle_targets_notify(x11, &event, 0);
+            vdagent_x11_handle_targets_notify(x11, &event);
         else
             vdagent_x11_handle_selection_notify(x11, &event, 0);
 
@@ -427,11 +427,7 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
     case PropertyNotify:
         if (x11->expect_property_notify &&
                                 event.xproperty.state == PropertyNewValue) {
-            if (event.xproperty.atom == x11->targets_atom) {
-                vdagent_x11_handle_targets_notify(x11, &event, 1);
-            } else {
-                vdagent_x11_handle_selection_notify(x11, &event, 1);
-            }
+            vdagent_x11_handle_selection_notify(x11, &event, 1);
         }
         if (x11->selection_req_data && 
                                  event.xproperty.state == PropertyDelete) {
@@ -550,7 +546,7 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
         goto exit;
     }
 
-    if (!incr) {
+    if (!incr && prop != x11->targets_atom) {
         if (type_ret == x11->incr_atom) {
             int prop_min_size = *(uint32_t*)data;
 
@@ -773,7 +769,7 @@ static void vdagent_x11_print_targets(struct vdagent_x11 *x11,
 }
 
 static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
-                                              XEvent *event, int incr)
+                                              XEvent *event)
 {
     int i, len;
     Atom atom, *atoms = NULL;
@@ -792,7 +788,7 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
         return;
 
     len = vdagent_x11_get_selection(x11, event, XA_ATOM, x11->targets_atom, 32,
-                                    (unsigned char **)&atoms, incr);
+                                    (unsigned char **)&atoms, 0);
     if (len == 0 || len == -1) /* waiting for more data or error? */
         return;
 
@@ -825,7 +821,7 @@ static void vdagent_x11_handle_targets_notify(struct vdagent_x11 *x11,
         vdagent_x11_set_clipboard_owner(x11, owner_guest);
     }
 
-    vdagent_x11_get_selection_free(x11, (unsigned char *)atoms, incr);
+    vdagent_x11_get_selection_free(x11, (unsigned char *)atoms, 0);
 }
 
 static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
