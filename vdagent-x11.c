@@ -571,12 +571,7 @@ static int vdagent_x11_get_selection(struct vdagent_x11 *x11, XEvent *event,
 
     *data_ret = NULL;
 
-    if (incr) {
-        if (event->xproperty.atom != prop) {
-            fprintf(x11->errfile, "PropertyNotify parameters mismatch\n");
-            goto exit;
-        }
-    } else {
+    if (!incr) {
         if (event->xselection.property == None) {
             if (x11->verbose)
                 fprintf(x11->errfile,
@@ -776,7 +771,12 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     }
     vdagent_x11_get_clipboard_atom(x11, x11->conversion_req->selection, &clip);
 
-    if (!incr) {
+    if (incr) {
+        if (event->xproperty.atom != clip ||
+                event->xproperty.window != x11->selection_window) {
+            return;
+        }
+    } else {
         if (vdagent_x11_get_clipboard_selection(x11, event, &selection)) {
             len = -1;
         } else if (selection != x11->conversion_req->selection) {
