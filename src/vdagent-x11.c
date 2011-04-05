@@ -483,6 +483,10 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
 
         vdagent_x11_send_daemon_guest_xorg_res(x11);
         break;
+    case MappingNotify:
+        /* These are uninteresting */
+        handled = 1;
+        break;
     case SelectionNotify:
         if (event.xselection.target == x11->targets_atom)
             vdagent_x11_handle_targets_notify(x11, &event);
