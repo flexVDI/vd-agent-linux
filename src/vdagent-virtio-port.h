@@ -76,9 +76,21 @@ void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **vportp,
         fd_set *readfds, fd_set *writefds);
 
 
-/* Queue a message for delivery
+/* Queue a message for delivery, either bit by bit, or all at once
 
    Returns 0 on success -1 on error (only happens when malloc fails) */
+int vdagent_virtio_port_write_start(
+        struct vdagent_virtio_port *vport,
+        uint32_t port_nr,
+        uint32_t message_type,
+        uint32_t message_opaque,
+        uint32_t data_size);
+
+int vdagent_virtio_port_write_append(
+        struct vdagent_virtio_port *vport,
+        const uint8_t *data,
+        uint32_t size);
+
 int vdagent_virtio_port_write(
         struct vdagent_virtio_port *vport,
         uint32_t port_nr,

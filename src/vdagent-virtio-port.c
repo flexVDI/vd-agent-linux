@@ -33,7 +33,8 @@ struct vdagent_virtio_port_buf {
     uint8_t *buf;
     size_t pos;
     size_t size;
-    
+    size_t write_pos;
+
     struct vdagent_virtio_port_buf *next;
 };
 
@@ -151,12 +152,26 @@ void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **vportp,
         vdagent_virtio_port_do_write(vportp);
 }
 
-int vdagent_virtio_port_write(
+static struct vdagent_virtio_port_buf* vdagent_virtio_port_get_last_wbuf(
+    struct vdagent_virtio_port *vport)
+{
+    struct vdagent_virtio_port_buf *wbuf;
+
+    wbuf = vport->write_buf;
+    if (!wbuf)
+        return NULL;
+
+    while (wbuf->next)
+        wbuf = wbuf->next;
+
+    return wbuf;
+}
+
+int vdagent_virtio_port_write_start(
         struct vdagent_virtio_port *vport,
         uint32_t port_nr,
         uint32_t message_type,
         uint32_t message_opaque,
-        const uint8_t *data,
         uint32_t data_size)
 {
     struct vdagent_virtio_port_buf *wbuf, *new_wbuf;
@@ -168,6 +183,7 @@ int vdagent_virtio_port_write(
         return -1;
 
     new_wbuf->pos = 0;
+    new_wbuf->write_pos = 0;
     new_wbuf->size = sizeof(chunk_header) + sizeof(message_header) + data_size;
     new_wbuf->next = NULL;
     new_wbuf->buf = malloc(new_wbuf->size);
@@ -178,29 +194,63 @@ int vdagent_virtio_port_write(
 
     chunk_header.port = port_nr;
     chunk_header.size = sizeof(message_header) + data_size;
+    memcpy(new_wbuf->buf + new_wbuf->write_pos, &chunk_header,
+           sizeof(chunk_header));
+    new_wbuf->write_pos += sizeof(chunk_header);
+    
     message_header.protocol = VD_AGENT_PROTOCOL;
     message_header.type = message_type;
     message_header.opaque = message_opaque;
     message_header.size = data_size;
-
-    memcpy(new_wbuf->buf, &chunk_header, sizeof(chunk_header));
-    memcpy(new_wbuf->buf + sizeof(chunk_header), &message_header,
+    memcpy(new_wbuf->buf + new_wbuf->write_pos, &message_header,
            sizeof(message_header));
-    memcpy(new_wbuf->buf + sizeof(chunk_header) + sizeof(message_header),
-           data, data_size);
+    new_wbuf->write_pos += sizeof(message_header);
 
     if (!vport->write_buf) {
         vport->write_buf = new_wbuf;
         return 0;
     }
 
-    /* maybe we should limit the write_buf stack depth ? */
-    wbuf = vport->write_buf;
-    while (wbuf->next)
-        wbuf = wbuf->next;
-
+    wbuf = vdagent_virtio_port_get_last_wbuf(vport);
     wbuf->next = new_wbuf;
 
+    return 0;
+}
+
+int vdagent_virtio_port_write_append(struct vdagent_virtio_port *vport,
+                                     const uint8_t *data, uint32_t size)
+{
+    struct vdagent_virtio_port_buf *wbuf;
+
+    wbuf = vdagent_virtio_port_get_last_wbuf(vport);
+    if (!wbuf) {
+        fprintf(vport->errfile, "can't append without a buffer");
+        return -1;
+    }
+
+    if (wbuf->size - wbuf->write_pos < size) {
+        fprintf(vport->errfile, "can't append to full buffer");
+        return -1;
+    }
+
+    memcpy(wbuf->buf + wbuf->write_pos, data, size);
+    wbuf->write_pos += size;
+    return 0;
+}
+
+int vdagent_virtio_port_write(
+        struct vdagent_virtio_port *vport,
+        uint32_t port_nr,
+        uint32_t message_type,
+        uint32_t message_opaque,
+        const uint8_t *data,
+        uint32_t data_size)
+{
+    if (vdagent_virtio_port_write_start(vport, port_nr, message_type,
+                                        message_opaque, data_size)) {
+        return -1;
+    }
+    vdagent_virtio_port_write_append(vport, data, data_size);
     return 0;
 }
 
@@ -334,6 +384,11 @@ static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **vportp)
     if (!wbuf) {
         fprintf(vport->errfile,
                 "do_write called on a port without a write buf ?!\n");
+        return;
+    }
+
+    if (wbuf->write_pos != wbuf->size) {
+        fprintf(vport->errfile, "do_write: buffer is incomplete!!\n");
         return;
     }
 
