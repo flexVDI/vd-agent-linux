@@ -297,8 +297,7 @@ size_error:
 int do_agent_clipboard(struct udscs_connection *conn,
         struct udscs_message_header *header, const uint8_t *data)
 {
-    const uint8_t *msg;
-    uint8_t *buf = NULL, selection = header->arg1;
+    uint8_t selection = header->arg1;
     uint32_t msg_type = 0, data_type = -1, size = header->size;
 
     if (!VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
@@ -358,35 +357,21 @@ int do_agent_clipboard(struct udscs_connection *conn,
     if (data_type != -1) {
         size += 4;
     }
-    if (size != header->size) {
-        uint8_t *p;
-        buf = p = malloc(size);
-        if (!buf) {
-            fprintf(logfile, "out of memory allocating clipboard (write)\n");
-            return -1;
-        }
-        if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
-                                    VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
-            p[0] = selection;
-            p[1] = 0;
-            p[2] = 0;
-            p[3] = 0;
-            p += 4;
-        }
-        if (data_type != -1) {
-            uint32_t *u = (uint32_t *)p;
-            u[0] = data_type;
-            p += 4;
-        }
-        memcpy(p, data, header->size);
-        msg = buf;
-    } else {
-        msg = data;
+
+    vdagent_virtio_port_write_start(virtio_port, VDP_CLIENT_PORT, msg_type,
+                                    0, size);
+
+    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+        uint8_t sel[4] = { selection, 0, 0, 0 };
+        vdagent_virtio_port_write_append(virtio_port, sel, 4);
+    }
+    if (data_type != -1) {
+        vdagent_virtio_port_write_append(virtio_port, (uint8_t*)&data_type, 4);
     }
 
-    vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT, msg_type,
-                              0, msg, size);
-    free(buf);
+    vdagent_virtio_port_write_append(virtio_port, data, header->size);
+
     return 0;
 
 error:
