@@ -34,4 +34,9 @@ gdmautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 initdir = $(sysconfdir)/rc.d/init.d
 init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
 
+install-data-local:
+	$(MKDIR_P) $(DESTDIR)$(localstatedir)/log/spice-vdagentd
+	$(MKDIR_P) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
+
+
 EXTRA_DIST = $(xdgautostart_DATA) $(gdmautostart_DATA) $(init_SCRIPTS)
