@@ -450,6 +450,7 @@ static int connection_matches_active_session(struct udscs_connection **connp,
     *conn_ret = *connp;
     return 1;
 }
+#endif
 
 void release_clipboards(void)
 {
@@ -463,7 +464,6 @@ void release_clipboards(void)
         agent_owns_clipboard[sel] = 0;
     }
 }
-#endif
 
 void update_active_session_connection(void)
 {
