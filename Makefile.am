@@ -32,6 +32,6 @@ gdmautostartdir = $(datadir)/gdm/autostart/LoginWindow
 gdmautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 
 initdir = $(sysconfdir)/rc.d/init.d
-init_DATA = $(top_srcdir)/data/spice-vdagentd
+init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
 
-EXTRA_DIST = $(xdgautostart_DATA) $(gdmautostart_DATA) $(init_DATA)
+EXTRA_DIST = $(xdgautostart_DATA) $(gdmautostart_DATA) $(init_SCRIPTS)
