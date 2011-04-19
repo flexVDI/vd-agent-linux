@@ -106,7 +106,6 @@ void daemonize(void)
         fprintf(logfile, "fork: %s\n", strerror(errno));
         retval = 1;
     default:
-        udscs_destroy_connection(&client);
         if (logfile != stderr)
             fclose(logfile);
         exit(retval);
@@ -166,6 +165,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Could not get home directory, logging to stderr\n");
     }
 
+    if (do_daemonize)
+        daemonize();
+
     client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
                            vdagentd_messages, VDAGENTD_NO_MESSAGES,
                            verbose? logfile:NULL, logfile);
@@ -174,9 +176,6 @@ int main(int argc, char *argv[])
             fclose(logfile);
         return 1;
     }
-
-    if (do_daemonize)
-        daemonize();
 
     x11 = vdagent_x11_create(client, logfile, verbose);
     if (!x11) {
