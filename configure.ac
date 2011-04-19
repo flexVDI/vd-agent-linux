@@ -1,5 +1,5 @@
 AC_PREREQ(2.65)
-AC_INIT([vd-agent], [0.6.3])
+AC_INIT([spice-vdagent], [0.8.0])
 AC_CONFIG_SRCDIR([configure.ac])
 
 AM_CONFIG_HEADER([src/config.h])
@@ -25,7 +25,7 @@ if test x"$enable_console_kit" = "xyes" ; then
     AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support] )
 fi
 AM_CONDITIONAL(HAVE_CONSOLE_KIT, test x"$enable_console_kit" = "xyes")
-PKG_CHECK_MODULES(SPICE, [spice-protocol])
+PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
 
 AC_CONFIG_FILES([
 Makefile

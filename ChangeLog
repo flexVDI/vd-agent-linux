@@ -1,3 +1,13 @@
+spice-agent-0.8.0
+-----------------
+* Add support for copy and paste using the primary selection, to use this
+  you need a spice-gtk widget based client and the latest spice-gtk code
+  (Marc-André Lureau and Hans de Goede)
+* Autotoolized (Christophe Fergeau)
+* Allow building without consolekit, for systems which don't have ck, such
+  as RHEL-5 (Christophe Fergeau)
+* Various small bugfixes (Hans de Goede)
+
 spice-agent-0.6.3
 -----------------
 * Initial release, starting with version nr 0.6.3, to indicate that it
