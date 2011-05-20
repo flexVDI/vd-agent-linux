@@ -182,8 +182,10 @@ struct udscs_connection *udscs_connect(const char *socketname,
     snprintf(address.sun_path, sizeof(address.sun_path), "%s", socketname);
     c = connect(conn->fd, (struct sockaddr *)&address, sizeof(address));
     if (c != 0) {
-        fprintf(conn->errfile, "connect %s: %s\n", socketname,
-                strerror(errno));
+        if (conn->logfile) {
+            fprintf(conn->logfile, "connect %s: %s\n", socketname,
+                    strerror(errno));
+        }
         free(conn);
         return NULL;
     }

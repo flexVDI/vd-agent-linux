@@ -76,6 +76,20 @@ void daemon_read_complete(struct udscs_connection **connp,
     }
 }
 
+int client_setup(int reconnect)
+{
+    while (1) {
+        client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
+                               vdagentd_messages, VDAGENTD_NO_MESSAGES,
+                               verbose ? logfile : NULL, logfile);
+        if (client || !reconnect) {
+            break;
+        }
+        sleep(1);
+    }
+    return client == NULL;
+}
+
 static void usage(FILE *fp)
 {
     fprintf(fp,
@@ -168,21 +182,16 @@ int main(int argc, char *argv[])
     if (do_daemonize)
         daemonize();
 
-    client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
-                           vdagentd_messages, VDAGENTD_NO_MESSAGES,
-                           verbose? logfile:NULL, logfile);
-    if (!client) {
-        if (logfile != stderr)
-            fclose(logfile);
-        return 1;
+    if (client_setup(do_daemonize)) {
+        retval = 1;
+        goto finish;
     }
 
     x11 = vdagent_x11_create(client, logfile, verbose);
     if (!x11) {
         udscs_destroy_connection(&client);
-        if (logfile != stderr)
-            fclose(logfile);
-        return 1;
+        retval = 1;
+        goto finish;
     }
 
     while (client && !quit) {
@@ -212,6 +221,8 @@ int main(int argc, char *argv[])
 
     vdagent_x11_destroy(x11);
     udscs_destroy_connection(&client);
+
+finish:
     if (logfile != stderr)
         fclose(logfile);
 
