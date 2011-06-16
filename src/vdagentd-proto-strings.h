@@ -29,6 +29,7 @@ static const char * const vdagentd_messages[] = {
         "clipboard request",
         "clipboard data",
         "clipboard release",
+        "version",
 };        
 
 #endif

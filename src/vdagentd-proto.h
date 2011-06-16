@@ -33,6 +33,7 @@ enum {
     VDAGENTD_CLIPBOARD_REQUEST, /* arg1: selection, arg 2 = type */
     VDAGENTD_CLIPBOARD_DATA,    /* arg1: sel, arg 2: type, data: data */
     VDAGENTD_CLIPBOARD_RELEASE, /* arg1: selection */
+    VDAGENTD_VERSION,           /* daemon -> client, data: version string */
     VDAGENTD_NO_MESSAGES /* Must always be last */
 };
 

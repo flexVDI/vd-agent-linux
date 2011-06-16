@@ -19,6 +19,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifdef HAVE_CONFIG_H
+# include <config.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,6 +71,14 @@ void daemon_read_complete(struct udscs_connection **connp,
     case VDAGENTD_CLIPBOARD_RELEASE:
         vdagent_x11_clipboard_release(x11, header->arg1);
         free(data);
+        break;
+    case VDAGENTD_VERSION:
+        if (strcmp(data, VERSION) != 0) {
+            fprintf(logfile,
+                    "Fatal vdagentd version mismatch: got %s expected %s\n",
+                    data, VERSION);
+            udscs_destroy_connection(connp);
+        }
         break;
     default:
         if (verbose)

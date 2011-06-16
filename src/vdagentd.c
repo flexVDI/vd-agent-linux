@@ -522,6 +522,9 @@ void agent_connect(struct udscs_connection *conn)
     udscs_set_user_data(conn, (void *)agent_data);
     update_active_session_connection();
 
+    udscs_write(conn, VDAGENTD_VERSION, 0, 0,
+                (uint8_t *)VERSION, strlen(VERSION) + 1);
+
     if (mon_config)
         udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
                     (uint8_t *)mon_config, sizeof(VDAgentMonitorsConfig) +
