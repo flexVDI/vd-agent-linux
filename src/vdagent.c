@@ -39,6 +39,7 @@
 #include "vdagentd-proto-strings.h"
 #include "vdagent-x11.h"
 
+static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static int verbose = 0;
 static struct vdagent_x11 *x11 = NULL;
 static struct udscs_connection *client = NULL;
@@ -107,9 +108,11 @@ static void usage(FILE *fp)
     fprintf(fp,
             "vdagent -- spice agent xorg client\n"
             "options:\n"
-            "  -h    print this text\n"
-            "  -d    log debug messages\n"
-            "  -x    don't daemonize (and log to logfile)\n");
+            "  -h         print this text\n"
+            "  -d         log debug messages\n"
+            "  -s <port>  set virtio serial port  [%s]\n"
+            "  -x         don't daemonize (and log to logfile)\n",
+            portdev);
 }
 
 static void quit_handler(int sig)
@@ -138,6 +141,13 @@ void daemonize(void)
     }
 }
 
+static int file_test(const char *path)
+{
+    struct stat buffer;
+
+    return stat(path, &buffer);
+}
+
 int main(int argc, char *argv[])
 {
     fd_set readfds, writefds;
@@ -147,11 +157,14 @@ int main(int argc, char *argv[])
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dxh")))
+        if (-1 == (c = getopt(argc, argv, "-dxhs:")))
             break;
         switch (c) {
         case 'd':
             verbose++;
+            break;
+        case 's':
+            portdev = optarg;
             break;
         case 'x':
             do_daemonize = 0;
@@ -189,6 +202,13 @@ int main(int argc, char *argv[])
         }
     } else {
         fprintf(stderr, "Could not get home directory, logging to stderr\n");
+    }
+
+    if (file_test(portdev) != 0) {
+        fprintf(logfile, "Missing virtio device: %s\n",
+                portdev, strerror(errno));
+        retval = 1;
+        goto finish;
     }
 
     if (do_daemonize)
