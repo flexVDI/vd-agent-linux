@@ -45,6 +45,7 @@ static struct vdagent_x11 *x11 = NULL;
 static struct udscs_connection *client = NULL;
 static FILE *logfile = NULL;
 static int quit = 0;
+static int version_mismatch = 0;
 
 void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, uint8_t *data)
@@ -79,6 +80,7 @@ void daemon_read_complete(struct udscs_connection **connp,
                     "Fatal vdagentd version mismatch: got %s expected %s\n",
                     data, VERSION);
             udscs_destroy_connection(connp);
+            version_mismatch = 1;
         }
         break;
     default:
@@ -148,6 +150,15 @@ static int file_test(const char *path)
     return stat(path, &buffer);
 }
 
+static void cleanup(void)
+{
+    vdagent_x11_destroy(x11);
+    udscs_destroy_connection(&client);
+
+    if (logfile != stderr)
+        fclose(logfile);
+}
+
 int main(int argc, char *argv[])
 {
     fd_set readfds, writefds;
@@ -214,6 +225,14 @@ int main(int argc, char *argv[])
     if (do_daemonize)
         daemonize();
 
+reconnect:
+    if (version_mismatch) {
+        fprintf(logfile, "Version mismatch, restarting\n");
+        cleanup();
+        sleep(1);
+        execvp(argv[0], argv);
+    }
+
     if (client_setup(do_daemonize)) {
         retval = 1;
         goto finish;
@@ -253,6 +272,8 @@ int main(int argc, char *argv[])
 
     vdagent_x11_destroy(x11);
     udscs_destroy_connection(&client);
+    if (!quit)
+        goto reconnect;
 
 finish:
     if (logfile != stderr)
