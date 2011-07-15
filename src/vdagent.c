@@ -93,11 +93,11 @@ void daemon_read_complete(struct udscs_connection **connp,
 
 int client_setup(int reconnect)
 {
-    while (1) {
+    while (!quit) {
         client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
                                vdagentd_messages, VDAGENTD_NO_MESSAGES,
                                verbose ? logfile : NULL, logfile);
-        if (client || !reconnect) {
+        if (client || !reconnect || quit) {
             break;
         }
         sleep(1);
