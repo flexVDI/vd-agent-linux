@@ -494,7 +494,7 @@ void agent_connect(struct udscs_connection *conn)
 {
     uint32_t pid;
     struct agent_data *agent_data;
-    
+
     agent_data = calloc(1, sizeof(*agent_data));
     if (!agent_data) {
         fprintf(logfile, "Out of memory allocating agent data, disconnecting\n");
@@ -506,9 +506,9 @@ void agent_connect(struct udscs_connection *conn)
     agent_data->session = console_kit_session_for_pid(console_kit, pid);
 #else
     session_count++;
-    if (session_count == 1)
+    if (session_count == 1) {
         active_session_conn = conn;
-    else {
+    } else {
         /* disable communication with agents when we've got multiple
          * connections to the vdagentd and no consolekit since we can't
          * know to which one we should send data
@@ -517,8 +517,8 @@ void agent_connect(struct udscs_connection *conn)
                 "disabling vdagent to avoid potential information leak\n");
         active_session_conn = NULL;
     }
-
 #endif
+
     udscs_set_user_data(conn, (void *)agent_data);
     update_active_session_connection();
 
