@@ -150,15 +150,6 @@ static int file_test(const char *path)
     return stat(path, &buffer);
 }
 
-static void cleanup(void)
-{
-    vdagent_x11_destroy(x11);
-    udscs_destroy_connection(&client);
-
-    if (logfile != stderr)
-        fclose(logfile);
-}
-
 int main(int argc, char *argv[])
 {
     fd_set readfds, writefds;
@@ -228,7 +219,8 @@ int main(int argc, char *argv[])
 reconnect:
     if (version_mismatch) {
         fprintf(logfile, "Version mismatch, restarting\n");
-        cleanup();
+        if (logfile != stderr)
+            fclose(logfile);
         sleep(1);
         execvp(argv[0], argv);
     }
