@@ -1,3 +1,10 @@
+spice-agent-0.8.1
+-----------------
+* In daemon mode the session vdagent now retries connecting to the system
+  vdagentd every second, once a connection is made a version check is done,
+  if the version differs (which only happens on an upgrade from one version
+  to the next) the sesion vdagent re-execs itself (Marc-André Lureau)
+
 spice-agent-0.8.0
 -----------------
 * Add support for copy and paste using the primary selection, to use this
