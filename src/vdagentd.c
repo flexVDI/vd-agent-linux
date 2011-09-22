@@ -559,6 +559,7 @@ void agent_read_complete(struct udscs_connection **connp,
             fprintf(logfile,
                     "guest xorg resolution message has wrong size, disconnecting agent\n");
             udscs_destroy_connection(connp);
+            free(data);
             return;
         }
 
@@ -573,6 +574,7 @@ void agent_read_complete(struct udscs_connection **connp,
     case VDAGENTD_CLIPBOARD_RELEASE:
         if (do_agent_clipboard(*connp, header, data)) {
             udscs_destroy_connection(connp);
+            free(data);
             return;
         }
         break;
