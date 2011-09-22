@@ -554,8 +554,18 @@ void agent_read_complete(struct udscs_connection **connp,
     case VDAGENTD_GUEST_XORG_RESOLUTION: {
         struct vdagentd_guest_xorg_resolution *res =
             (struct vdagentd_guest_xorg_resolution *)data;
+        int n = header->size / sizeof(*res);
 
-        if (header->size != sizeof(*res)) {
+        /* Detect older version session agent, but don't disconnect, as
+           that stops it from getting the VDAGENTD_VERSION message, and then
+           it will never re-exec the new version... */
+        if (header->arg1 == 0 && header->arg2 == 0) {
+            fprintf(logfile, "got old session agent xorg resolution message, ignoring\n");
+            free(data);
+            return;
+        }
+
+        if (header->size != n * sizeof(*res)) {
             fprintf(logfile,
                     "guest xorg resolution message has wrong size, disconnecting agent\n");
             udscs_destroy_connection(connp);
@@ -563,8 +573,8 @@ void agent_read_complete(struct udscs_connection **connp,
             return;
         }
 
-        agent_data->width  = res->width;
-        agent_data->height = res->height;
+        agent_data->width  = header->arg1;
+        agent_data->height = header->arg2;
         check_xorg_resolution();
         break;
     }

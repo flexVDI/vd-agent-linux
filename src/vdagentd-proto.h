@@ -26,7 +26,9 @@
 #define VDAGENTD_SOCKET "/var/run/spice-vdagentd/spice-vdagent-sock"
 
 enum {
-    VDAGENTD_GUEST_XORG_RESOLUTION, /* client -> daemon */
+    VDAGENTD_GUEST_XORG_RESOLUTION, /* client -> daemon, arg1: overall width,
+                                       arg2: overall height, data: array of
+                                       vdagentd_guest_xorg_resolution */
     VDAGENTD_MONITORS_CONFIG, /* daemon -> client, VDAgentMonitorsConfig
                                  followed by num_monitors VDAgentMonConfig-s */
     VDAGENTD_CLIPBOARD_GRAB,    /* arg1: sel, data: array of supported types */
@@ -40,6 +42,8 @@ enum {
 struct vdagentd_guest_xorg_resolution {
     int width;
     int height;
+    int x;
+    int y;
 };
 
 #endif

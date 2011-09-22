@@ -564,13 +564,8 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
 {
-    struct vdagentd_guest_xorg_resolution res;
-
-    res.width  = x11->width;
-    res.height = x11->height;
-
-    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, 0, 0,
-                (uint8_t *)&res, sizeof(res));
+    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width,
+                x11->height, NULL, 0);
 }
 
 static const char *vdagent_x11_get_atom_name(struct vdagent_x11 *x11, Atom a)
