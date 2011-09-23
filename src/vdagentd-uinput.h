@@ -23,16 +23,21 @@
 #define __VDAGENTD_UINPUT_H
 
 #include <stdio.h>
+#include "vdagentd-proto.h"
 
 struct vdagentd_uinput;
 
 struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
-        int width, int height, FILE *errfile, int verbose);
+    int width, int height,
+    struct vdagentd_guest_xorg_resolution *screen_info, int screen_count,
+    FILE *errfile, int verbose);
 void vdagentd_uinput_destroy(struct vdagentd_uinput **uinputp);
 
 void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,
         VDAgentMouseState *mouse);
 void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
-        int width, int height);
+        int width, int height,
+        struct vdagentd_guest_xorg_resolution *screen_info,
+        int screen_count);
 
 #endif

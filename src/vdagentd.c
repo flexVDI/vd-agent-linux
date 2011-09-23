@@ -45,6 +45,8 @@ struct agent_data {
     char *session;
     int width;
     int height;
+    struct vdagentd_guest_xorg_resolution *screen_info;
+    int screen_count;
 };
 
 /* variables */
@@ -238,6 +240,8 @@ int virtio_port_read_complete(
                 uinput = vdagentd_uinput_create(uinput_device,
                                                 agent_data->width,
                                                 agent_data->height,
+                                                agent_data->screen_info,
+                                                agent_data->screen_count,
                                                 logfile, debug > 1);
             if (!uinput) {
                 fprintf(logfile, "Fatal uinput error\n");
@@ -394,15 +398,20 @@ static void check_xorg_resolution(void)
 {
     struct agent_data *agent_data = udscs_get_user_data(active_session_conn);
 
-    if (agent_data && agent_data->width) {
+    if (agent_data && agent_data->screen_info) {
         if (!uinput)
             uinput = vdagentd_uinput_create(uinput_device,
                                             agent_data->width,
                                             agent_data->height,
+                                            agent_data->screen_info,
+                                            agent_data->screen_count,
                                             logfile, debug > 1);
         else
-            vdagentd_uinput_update_size(&uinput, agent_data->width,
-                                        agent_data->height);
+            vdagentd_uinput_update_size(&uinput,
+                                        agent_data->width,
+                                        agent_data->height,
+                                        agent_data->screen_info,
+                                        agent_data->screen_count);
         if (!uinput) {
             fprintf(logfile, "Fatal uinput error\n");
             retval = 1;
@@ -552,8 +561,7 @@ void agent_read_complete(struct udscs_connection **connp,
 
     switch (header->type) {
     case VDAGENTD_GUEST_XORG_RESOLUTION: {
-        struct vdagentd_guest_xorg_resolution *res =
-            (struct vdagentd_guest_xorg_resolution *)data;
+        struct vdagentd_guest_xorg_resolution *res;
         int n = header->size / sizeof(*res);
 
         /* Detect older version session agent, but don't disconnect, as
@@ -573,8 +581,18 @@ void agent_read_complete(struct udscs_connection **connp,
             return;
         }
 
+        free(agent_data->screen_info);
+        res = malloc(n * sizeof(*res));
+        if (!res) {
+            fprintf(logfile, "out of memory allocating screen info\n");
+            n = 0;
+        }
+        memcpy(res, data, n * sizeof(*res));
         agent_data->width  = header->arg1;
         agent_data->height = header->arg2;
+        agent_data->screen_info  = res;
+        agent_data->screen_count = n;
+
         check_xorg_resolution();
         break;
     }

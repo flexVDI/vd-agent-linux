@@ -33,15 +33,19 @@
 struct vdagentd_uinput {
     const char *devname;
     int fd;
+    int verbose;
     int width;
     int height;
-    int verbose;
+    struct vdagentd_guest_xorg_resolution *screen_info;
+    int screen_count;
     FILE *errfile;
     VDAgentMouseState last;
 };
 
 struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
-    int width, int height, FILE *errfile, int verbose)
+    int width, int height,
+    struct vdagentd_guest_xorg_resolution *screen_info, int screen_count,
+    FILE *errfile, int verbose)
 {
     struct vdagentd_uinput *uinput;
 
@@ -54,7 +58,8 @@ struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
     uinput->verbose = verbose;
     uinput->errfile = errfile;
     
-    vdagentd_uinput_update_size(&uinput, width, height);
+    vdagentd_uinput_update_size(&uinput, width, height,
+                                screen_info, screen_count);
 
     return uinput;
 }
@@ -73,7 +78,9 @@ void vdagentd_uinput_destroy(struct vdagentd_uinput **uinputp)
 }
 
 void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
-        int width, int height)
+        int width, int height,
+        struct vdagentd_guest_xorg_resolution *screen_info,
+        int screen_count)
 {
     struct vdagentd_uinput *uinput = *uinputp;
     struct uinput_user_dev device = {
@@ -82,6 +89,9 @@ void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
         .absmax  [ ABS_Y ] = height,
     };
     int rc;
+
+    uinput->screen_info  = screen_info;
+    uinput->screen_count = screen_count;
 
     if (uinput->width == width && uinput->height == height)
         return;
@@ -169,6 +179,16 @@ void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,
         { .name = "down",   .mask =  VD_AGENT_DBUTTON_MASK, .btn = -1 },
     };
     int i, down;
+
+    if (*uinputp) {
+        if (mouse->display_id >= uinput->screen_count) {
+            fprintf(uinput->errfile, "mouse event for unknown monitor (%d >= %d)\n",
+                    mouse->display_id, uinput->screen_count);
+            return;
+        }
+        mouse->x += uinput->screen_info[mouse->display_id].x;
+        mouse->y += uinput->screen_info[mouse->display_id].y;
+    }
 
     if (*uinputp && uinput->last.x != mouse->x) {
         if (uinput->verbose)

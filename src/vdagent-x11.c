@@ -38,6 +38,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xinerama.h>
 #include <X11/extensions/Xfixes.h>
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
@@ -118,6 +119,7 @@ struct vdagent_x11 {
     int width;
     int height;
     int has_xrandr;
+    int has_xinerama;
     int has_xfixes;
     int xfixes_event_base;
     int max_prop_size;
@@ -218,8 +220,25 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
 
     if (XRRQueryExtension(x11->display, &i, &i))
         x11->has_xrandr = 1;
-    else
-        fprintf(x11->errfile, "no xrandr\n");
+
+    if (XineramaQueryExtension(x11->display, &i, &i))
+        x11->has_xinerama = 1;
+
+    switch (x11->has_xrandr << 4 | x11->has_xinerama) {
+    case 0x00:
+        fprintf(x11->errfile, "Neither Xrandr nor Xinerama found, assuming single monitor setup\n");
+        break;
+    case 0x01:
+        if (x11->verbose)
+            fprintf(x11->errfile, "Found Xinerama extension without Xrandr, assuming a multi monitor setup\n");
+        break;
+    case 0x10:
+        fprintf(x11->errfile, "Found Xrandr but no Xinerama, weird! Assuming a single monitor setup\n");
+        break;
+    case 0x11:
+        /* Standard single monitor setup, nothing to see here */
+        break;
+    }
 
     if (XFixesQueryExtension(x11->display, &x11->xfixes_event_base, &i) &&
         XFixesQueryVersion(x11->display, &major, &minor) && major >= 1) {
@@ -564,8 +583,49 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
 
 static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
 {
+    struct vdagentd_guest_xorg_resolution *res = NULL;
+    XineramaScreenInfo *screen_info = NULL;
+    int i, screen_count = 0;
+
+    if (x11->has_xinerama)
+        screen_info = XineramaQueryScreens(x11->display, &screen_count);
+
+    if (screen_count == 0)
+        screen_count = 1;
+
+    res = malloc(screen_count * sizeof(*res));
+    if (!res) {
+        fprintf(x11->errfile, "out of memory while trying to send resolutions, not sending resolutions.\n");
+        if (screen_info)
+            XFree(screen_info);
+        return;
+    }
+
+    if (screen_info) {
+        for (i = 0; i < screen_count; i++) {
+            if (screen_info[i].screen_number >= screen_count) {
+                fprintf(x11->errfile, "Invalid screen number in xinerama screen info (%d >= %d)\n",
+                        screen_info[i].screen_number, screen_count);
+                XFree(screen_info);
+                free(res);
+                return;
+            }
+            res[screen_info[i].screen_number].width = screen_info[i].width;
+            res[screen_info[i].screen_number].height = screen_info[i].height;
+            res[screen_info[i].screen_number].x = screen_info[i].x_org;
+            res[screen_info[i].screen_number].y = screen_info[i].y_org;
+        }
+        XFree(screen_info);
+    } else {
+        res[0].width  = x11->width;
+        res[0].height = x11->height;
+        res[0].x = 0;
+        res[0].y = 0;
+    }
+
     udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width,
-                x11->height, NULL, 0);
+                x11->height, (uint8_t *)res, screen_count * sizeof(*res));
+    free(res);
 }
 
 static const char *vdagent_x11_get_atom_name(struct vdagent_x11 *x11, Atom a)

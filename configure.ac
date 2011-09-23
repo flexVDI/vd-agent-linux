@@ -19,7 +19,7 @@ AC_ARG_ENABLE([console-kit],
               [enable_console_kit="yes"])
 
 PKG_PROG_PKG_CONFIG
-PKG_CHECK_MODULES(X, [xfixes xrandr x11])
+PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
 if test x"$enable_console_kit" = "xyes" ; then
     PKG_CHECK_MODULES(DBUS, [dbus-1])
     AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support] )
