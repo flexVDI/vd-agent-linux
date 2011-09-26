@@ -18,14 +18,24 @@ AC_ARG_ENABLE([console-kit],
               [enable_console_kit="$enableval"],
               [enable_console_kit="yes"])
 
+AC_ARG_ENABLE([pciaccess],
+              [AS_HELP_STRING([--enable-pciaccess], [Enable libpciaccess use for auto generation of Xinerama xorg.conf (default: yes)])],
+              [enable_pciaccess="$enableval"],
+              [enable_pciaccess="yes"])
+
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
+PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
 if test x"$enable_console_kit" = "xyes" ; then
     PKG_CHECK_MODULES(DBUS, [dbus-1])
     AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support] )
 fi
 AM_CONDITIONAL(HAVE_CONSOLE_KIT, test x"$enable_console_kit" = "xyes")
-PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
+if test x"$enable_pciaccess" = "xyes" ; then
+    PKG_CHECK_MODULES(PCIACCESS, [pciaccess >= 0.10])
+    AC_DEFINE([HAVE_PCIACCESS], [1], [If defined, vdagentd will be compiled with pciaccess support] )
+fi
+AM_CONDITIONAL(HAVE_PCIACCESS, test x"$enable_pciaccess" = "xyes")
 
 AC_CONFIG_FILES([
 Makefile

@@ -38,6 +38,7 @@
 #include "vdagentd-proto.h"
 #include "vdagentd-proto-strings.h"
 #include "vdagentd-uinput.h"
+#include "vdagentd-xorg-conf.h"
 #include "vdagent-virtio-port.h"
 #include "console-kit.h"
 
@@ -118,6 +119,16 @@ static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
         return;
     }
 
+    vdagentd_write_xorg_conf(new_monitors, logfile);
+
+    if (new_monitors->num_of_monitors != 1) {
+        /* No use in sending this to the session agent it cannot handle it
+           anyways */
+        free(mon_config);
+        mon_config = NULL;
+        goto ack;
+    }
+
     if (!mon_config ||
             mon_config->num_of_monitors != new_monitors->num_of_monitors) {
         free(mon_config);
@@ -133,6 +144,7 @@ static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
     udscs_server_write_all(server, VDAGENTD_MONITORS_CONFIG, 0, 0,
                            (uint8_t *)mon_config, size);
 
+ack:
     /* Acknowledge reception of monitors config to spice server / client */
     reply.type  = VD_AGENT_MONITORS_CONFIG;
     reply.error = VD_AGENT_SUCCESS;

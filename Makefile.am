@@ -7,10 +7,11 @@ src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS)
 src_spice_vdagent_LDADD = $(X_LIBS) $(SPICE_LIBS)
 src_spice_vdagent_SOURCES = src/vdagent.c src/vdagent-x11.c src/udscs.c
 
-src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(SPICE_CFLAGS)
-src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(SPICE_LIBS)
+src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(PCIACCESS_CFLAGS) $(SPICE_CFLAGS)
+src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(PCIACCESS_LIBS) $(SPICE_LIBS)
 src_spice_vdagentd_SOURCES = src/vdagentd.c \
                              src/vdagentd-uinput.c \
+                             src/vdagentd-xorg-conf.c \
                              src/vdagent-virtio-port.c \
                              src/udscs.c
 if HAVE_CONSOLE_KIT
@@ -22,6 +23,7 @@ noinst_HEADERS = src/console-kit.h \
                  src/vdagent-x11.h \
                  src/udscs.h \
                  src/vdagentd-uinput.h \
+                 src/vdagentd-xorg-conf.h \
                  src/vdagentd-proto.h \
                  src/vdagent-virtio-port.h
 
