@@ -75,7 +75,7 @@ void daemon_read_complete(struct udscs_connection **connp,
         free(data);
         break;
     case VDAGENTD_VERSION:
-        if (strcmp(data, VERSION) != 0) {
+        if (strcmp((char *)data, VERSION) != 0) {
             fprintf(logfile,
                     "Fatal vdagentd version mismatch: got %s expected %s\n",
                     data, VERSION);
@@ -131,7 +131,7 @@ void daemonize(void)
     case 0:
         close(0); close(1); close(2);
         setsid();
-        x = open("/dev/null", O_RDWR); dup(x); dup(x);
+        x = open("/dev/null", O_RDWR); x = dup(x); x = dup(x);
         break;
     case -1:
         fprintf(logfile, "fork: %s\n", strerror(errno));
@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
     }
 
     if (file_test(portdev) != 0) {
-        fprintf(logfile, "Missing virtio device: %s\n",
+        fprintf(logfile, "Missing virtio device '%s': %s\n",
                 portdev, strerror(errno));
         retval = 1;
         goto finish;

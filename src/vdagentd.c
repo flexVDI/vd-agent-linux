@@ -650,7 +650,7 @@ void daemonize(void)
     case 0:
         close(0); close(1); close(2);
         setsid();
-        x = open("/dev/null", O_RDWR); dup(x); dup(x);
+        x = open("/dev/null", O_RDWR); x = dup(x); x = dup(x);
         pidfile = fopen(pidfilename, "w");
         if (pidfile) {
             fprintf(pidfile, "%d\n", (int)getpid());
