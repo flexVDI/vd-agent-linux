@@ -1,4 +1,4 @@
-AC_PREREQ(2.63)
+AC_PREREQ(2.59)
 AC_INIT([spice-vdagent], [0.8.2])
 AC_CONFIG_SRCDIR([configure.ac])
 
@@ -8,6 +8,7 @@ AM_INIT_AUTOMAKE([foreign dist-bzip2 no-dist-gzip subdir-objects])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
 AC_PROG_CC
+AM_PROG_CC_C_O
 AC_HEADER_STDC
 AC_PROG_INSTALL
 AC_PROG_LN_S

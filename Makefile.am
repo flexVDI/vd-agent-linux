@@ -37,8 +37,8 @@ initdir = $(sysconfdir)/rc.d/init.d
 init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
 
 install-data-local:
-	$(MKDIR_P) $(DESTDIR)$(localstatedir)/log/spice-vdagentd
-	$(MKDIR_P) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
+	$(mkdir_p) $(DESTDIR)$(localstatedir)/log/spice-vdagentd
+	$(mkdir_p) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
 
 
 tmpfilesdir = $(sysconfdir)/tmpfiles.d
