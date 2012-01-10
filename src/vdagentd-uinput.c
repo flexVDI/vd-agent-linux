@@ -92,8 +92,8 @@ void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
         .absmax  [ ABS_X ] = 32767,
         .absmax  [ ABS_Y ] = 32767,
 #else
-        .absmax  [ ABS_X ] = width,
-        .absmax  [ ABS_Y ] = height,
+        .absmax  [ ABS_X ] = width - 1,
+        .absmax  [ ABS_Y ] = height - 1,
 #endif
     };
     int rc;
@@ -201,8 +201,8 @@ void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,
         mouse->x += uinput->screen_info[mouse->display_id].x;
         mouse->y += uinput->screen_info[mouse->display_id].y;
 #ifdef WITH_STATIC_UINPUT
-        mouse->x = mouse->x * 32767 / uinput->width;
-        mouse->y = mouse->y * 32767 / uinput->height;
+        mouse->x = mouse->x * 32767 / (uinput->width - 1);
+        mouse->y = mouse->y * 32767 / (uinput->height - 1);
 #endif
     }
 
