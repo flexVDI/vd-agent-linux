@@ -19,6 +19,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -85,8 +88,13 @@ void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
     struct vdagentd_uinput *uinput = *uinputp;
     struct uinput_user_dev device = {
         .name = "spice vdagent tablet",
+#ifdef WITH_STATIC_UINPUT
+        .absmax  [ ABS_X ] = 32767,
+        .absmax  [ ABS_Y ] = 32767,
+#else
         .absmax  [ ABS_X ] = width,
         .absmax  [ ABS_Y ] = height,
+#endif
     };
     int rc;
 
@@ -100,7 +108,11 @@ void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
     uinput->height = height;
 
     if (uinput->fd != -1)
+#ifndef WITH_STATIC_UINPUT
         close(uinput->fd);
+#else
+        return;
+#endif
 
     uinput->fd = open(uinput->devname, O_RDWR);
     if (uinput->fd == -1) {
@@ -188,6 +200,10 @@ void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,
         }
         mouse->x += uinput->screen_info[mouse->display_id].x;
         mouse->y += uinput->screen_info[mouse->display_id].y;
+#ifdef WITH_STATIC_UINPUT
+        mouse->x = mouse->x * 32767 / uinput->width;
+        mouse->y = mouse->y * 32767 / uinput->height;
+#endif
     }
 
     if (*uinputp && uinput->last.x != mouse->x) {

@@ -437,7 +437,9 @@ static void check_xorg_resolution(void)
             send_capabilities(virtio_port, 1);
         }
     } else {
+#ifndef WITH_STATIC_UINPUT
         vdagentd_uinput_destroy(&uinput);
+#endif
         if (virtio_port) {
             vdagent_virtio_port_flush(&virtio_port);
             vdagent_virtio_port_destroy(&virtio_port);
@@ -796,10 +798,22 @@ int main(int argc, char *argv[])
     if (do_daemonize)
         daemonize();
 
+#ifdef WITH_STATIC_UINPUT
+    uinput = vdagentd_uinput_create(uinput_device, 1024, 768, NULL, 0,
+                                    logfile, debug > 1);
+    if (!uinput) {
+        udscs_destroy_server(server);
+        if (logfile != stderr)
+            fclose(logfile);
+        return 1;
+    }
+#endif
+
 #ifdef HAVE_CONSOLE_KIT
     console_kit = console_kit_create(logfile);
     if (!console_kit) {
         fprintf(logfile, "Fatal could not connect to console kit\n");
+        vdagentd_uinput_destroy(&uinput);
         udscs_destroy_server(server);
         if (logfile != stderr)
             fclose(logfile);

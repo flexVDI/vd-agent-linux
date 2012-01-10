@@ -24,19 +24,30 @@ AC_ARG_ENABLE([pciaccess],
               [enable_pciaccess="$enableval"],
               [enable_pciaccess="yes"])
 
+AC_ARG_ENABLE([static-uinput],
+              [AS_HELP_STRING([--enable-statis-uinput], [Enable use of a fixed, static uinput device for X-servers without hotplug support (default: no)])],
+              [enable_static_uinput="$enableval"],
+              [enable_static_uinput="yes"])
+
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
 PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
+
 if test x"$enable_console_kit" = "xyes" ; then
     PKG_CHECK_MODULES(DBUS, [dbus-1])
     AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support] )
 fi
 AM_CONDITIONAL(HAVE_CONSOLE_KIT, test x"$enable_console_kit" = "xyes")
+
 if test x"$enable_pciaccess" = "xyes" ; then
     PKG_CHECK_MODULES(PCIACCESS, [pciaccess >= 0.10])
     AC_DEFINE([HAVE_PCIACCESS], [1], [If defined, vdagentd will be compiled with pciaccess support] )
 fi
 AM_CONDITIONAL(HAVE_PCIACCESS, test x"$enable_pciaccess" = "xyes")
+
+if test x"$enable_static_uinput" = "xyes" ; then
+    AC_DEFINE([WITH_STATIC_UINPUT], [1], [If defined, vdagentd will use a static uinput device] )
+fi
 
 AC_CONFIG_FILES([
 Makefile
