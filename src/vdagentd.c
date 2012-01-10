@@ -549,6 +549,11 @@ void agent_disconnect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data = udscs_get_user_data(conn);
 
+#ifndef HAVE_CONSOLE_KIT
+    if (conn == active_session_conn)
+        active_session_conn = NULL;
+#endif
+
     free(agent_data->session);
     agent_data->session = NULL;
     update_active_session_connection();
