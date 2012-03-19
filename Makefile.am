@@ -7,8 +7,8 @@ src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS)
 src_spice_vdagent_LDADD = $(X_LIBS) $(SPICE_LIBS)
 src_spice_vdagent_SOURCES = src/vdagent.c src/vdagent-x11.c src/udscs.c
 
-src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(PCIACCESS_CFLAGS) $(SPICE_CFLAGS)
-src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(PCIACCESS_LIBS) $(SPICE_LIBS)
+src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(LIBSYSTEMD_LOGIN_CFLAGS) $(PCIACCESS_CFLAGS) $(SPICE_CFLAGS)
+src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(LIBSYSTEMD_LOGIN_LIBS) $(PCIACCESS_LIBS) $(SPICE_LIBS)
 src_spice_vdagentd_SOURCES = src/vdagentd.c \
                              src/vdagentd-uinput.c \
                              src/vdagentd-xorg-conf.c \
@@ -16,6 +16,9 @@ src_spice_vdagentd_SOURCES = src/vdagentd.c \
                              src/udscs.c
 if HAVE_CONSOLE_KIT
 src_spice_vdagentd_SOURCES += src/console-kit.c
+endif
+if HAVE_LIBSYSTEMD_LOGIN
+src_spice_vdagentd_SOURCES += src/systemd-login.c
 endif
 
 noinst_HEADERS = src/session-info.h \

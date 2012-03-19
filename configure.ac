@@ -1,5 +1,5 @@
 AC_PREREQ(2.59)
-AC_INIT([spice-vdagent], [0.8.2])
+AC_INIT([spice-vdagent], [0.10.0])
 AC_CONFIG_SRCDIR([configure.ac])
 
 AM_CONFIG_HEADER([src/config.h])
@@ -14,10 +14,14 @@ AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_DEFINE(_GNU_SOURCE, [1], [Enable GNU extensions])
 
-AC_ARG_ENABLE([console-kit],
-              [AS_HELP_STRING([--enable-console-kit], [Enable ConsoleKit use (default: yes)])],
-              [enable_console_kit="$enableval"],
-              [enable_console_kit="yes"])
+AC_ARG_WITH([session-info],
+  [AS_HELP_STRING([--with-session-info=@<:@auto/console-kit/systemd/none@:>@],
+                  [Session-info source to use @<:@default=auto@:>@])],
+  [case "$with_session_info" in
+     auto|console-kit|systemd|none) ;;
+     *) AC_MSG_ERROR([invalid session-info type specified]) ;;
+   esac],
+  [with_session_info="auto"])
 
 AC_ARG_ENABLE([pciaccess],
               [AS_HELP_STRING([--enable-pciaccess], [Enable libpciaccess use for auto generation of Xinerama xorg.conf (default: yes)])],
@@ -33,11 +37,39 @@ PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
 PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
 
-if test x"$enable_console_kit" = "xyes" ; then
-    PKG_CHECK_MODULES(DBUS, [dbus-1])
-    AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support] )
+if test "$with_session_info" = "auto" || test "$with_session_info" = "systemd"; then
+    PKG_CHECK_MODULES([LIBSYSTEMD_LOGIN],
+                      [libsystemd-login >= 42],
+                      [have_libsystemd_login="yes"],
+                      [have_libsystemd_login="no"])
+    if test x"$have_libsystemd_login" = "xno" && test "$with_session_info" = "systemd"; then
+        AC_MSG_ERROR([libsystemd-login support explicitly requested, but some required packages are not available])
+    fi
+    if test x"$have_libsystemd_login" = "xyes"; then
+        AC_DEFINE(HAVE_LIBSYSTEMD_LOGIN, [1], [If defined, vdagentd will be compiled with libsystemd-login support])
+        with_session_info="systemd"
+    fi
+else
+    have_libsystemd_login="no"
 fi
-AM_CONDITIONAL(HAVE_CONSOLE_KIT, test x"$enable_console_kit" = "xyes")
+AM_CONDITIONAL(HAVE_LIBSYSTEMD_LOGIN, test x"$have_libsystemd_login" = "xyes")
+
+if test "$with_session_info" = "auto" || test "$with_session_info" = "console-kit"; then
+    PKG_CHECK_MODULES([DBUS],
+                      [dbus-1],
+                      [have_console_kit="yes"],
+                      [have_console_kit="no"])
+    if test x"$have_console_kit" = "xno" && test "$with_session_info" = "console-kit"; then
+        AC_MSG_ERROR([console-kit support explicitly requested, but some required packages are not available])
+    fi
+    if test x"$have_console_kit" = "xyes"; then
+        AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support])
+        with_session_info="console-kit"
+    fi
+else
+    have_console_kit="no"
+fi
+AM_CONDITIONAL(HAVE_CONSOLE_KIT, test x"$have_console_kit" = "xyes")
 
 if test x"$enable_pciaccess" = "xyes" ; then
     PKG_CHECK_MODULES(PCIACCESS, [pciaccess >= 0.10])
@@ -53,3 +85,20 @@ AC_CONFIG_FILES([
 Makefile
 ])
 AC_OUTPUT
+
+dnl ==========================================================================
+AC_MSG_NOTICE([
+
+        spice-vdagent $VERSION
+        ====================
+
+        prefix:                   ${prefix}
+        c compiler:               ${CC}
+
+        session-info:             ${with_session_info}
+        pciaccess:                ${enable_pciaccess}
+        static uinput:            ${enable_static_uinput}
+
+        Now type 'make' to build $PACKAGE
+
+])

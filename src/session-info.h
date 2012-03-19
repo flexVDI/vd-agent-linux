@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#if defined HAVE_CONSOLE_KIT
+#if defined HAVE_CONSOLE_KIT || defined HAVE_LIBSYSTEMD_LOGIN
 #define HAVE_SESSION_INFO
 #endif
 
