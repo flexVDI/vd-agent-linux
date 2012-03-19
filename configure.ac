@@ -27,7 +27,7 @@ AC_ARG_ENABLE([pciaccess],
 AC_ARG_ENABLE([static-uinput],
               [AS_HELP_STRING([--enable-statis-uinput], [Enable use of a fixed, static uinput device for X-servers without hotplug support (default: no)])],
               [enable_static_uinput="$enableval"],
-              [enable_static_uinput="yes"])
+              [enable_static_uinput="no"])
 
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
