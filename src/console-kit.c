@@ -1,6 +1,6 @@
-/*  console-kit.h vdagentd ConsoleKit integration code
+/*  console-kit.c vdagentd ConsoleKit integration code
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2012 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -19,14 +19,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "console-kit.h"
+#include "session-info.h"
 #include <dbus/dbus.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct console_kit {
+struct session_info {
     DBusConnection *connection;
     int fd;
     char *seat;
@@ -34,12 +34,12 @@ struct console_kit {
     FILE *errfile;
 };
 
-static char *console_kit_get_first_seat(struct console_kit *ck);
-static char *console_kit_check_active_session_change(struct console_kit *ck);
+static char *console_kit_get_first_seat(struct session_info *ck);
+static char *console_kit_check_active_session_change(struct session_info *ck);
 
-struct console_kit *console_kit_create(FILE *errfile)
+struct session_info *session_info_create(FILE *errfile)
 {
-    struct console_kit *ck;
+    struct session_info *ck;
     DBusError error;
     char match[1024];
 
@@ -64,12 +64,12 @@ struct console_kit *console_kit_create(FILE *errfile)
     
     if (!dbus_connection_get_unix_fd(ck->connection, &ck->fd)) {
         fprintf(ck->errfile, "Unable to get connection fd\n");
-        console_kit_destroy(ck);
+        session_info_destroy(ck);
         return NULL;
     }
 
     if (!console_kit_get_first_seat(ck)) {
-        console_kit_destroy(ck);
+        session_info_destroy(ck);
         return NULL;
     }
 
@@ -81,14 +81,14 @@ struct console_kit *console_kit_create(FILE *errfile)
     dbus_bus_add_match(ck->connection, match, &error);
     if (dbus_error_is_set(&error)) { 
         fprintf(ck->errfile, "Match Error (%s)\n", error.message);
-        console_kit_destroy(ck);
+        session_info_destroy(ck);
         return NULL;
     }
 
     return ck;
 }
 
-void console_kit_destroy(struct console_kit *ck)
+void session_info_destroy(struct session_info *ck)
 {
     if (!ck)
         return;
@@ -99,12 +99,12 @@ void console_kit_destroy(struct console_kit *ck)
     free(ck);
 }
 
-int console_kit_get_fd(struct console_kit *ck)
+int session_info_get_fd(struct session_info *ck)
 {
     return ck->fd;
 }
 
-static char *console_kit_get_first_seat(struct console_kit *ck)
+static char *console_kit_get_first_seat(struct session_info *ck)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -168,7 +168,7 @@ exit:
     return ck->seat;
 }
 
-const char *console_kit_get_active_session(struct console_kit *ck)
+const char *session_info_get_active_session(struct session_info *ck)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -235,7 +235,7 @@ exit:
     return console_kit_check_active_session_change(ck);
 }
 
-char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid)
+char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -305,7 +305,7 @@ exit:
     return ssid;
 }
 
-static char *console_kit_check_active_session_change(struct console_kit *ck)
+static char *console_kit_check_active_session_change(struct session_info *ck)
 {
     DBusMessage *message = NULL;
     DBusMessageIter iter;

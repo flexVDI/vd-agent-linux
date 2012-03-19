@@ -1,6 +1,6 @@
 /*  vdagentd.c vdagentd (daemon) code
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2012 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -40,7 +40,7 @@
 #include "vdagentd-uinput.h"
 #include "vdagentd-xorg-conf.h"
 #include "vdagent-virtio-port.h"
-#include "console-kit.h"
+#include "session-info.h"
 
 struct agent_data {
     char *session;
@@ -58,14 +58,14 @@ static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
-#ifdef HAVE_CONSOLE_KIT
-static struct console_kit *console_kit = NULL;
+#ifdef HAVE_SESSION_INFO
+static struct session_info *session_info = NULL;
 #endif
 static struct vdagentd_uinput *uinput = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
-#ifdef HAVE_CONSOLE_KIT
+#ifdef HAVE_SESSION_INFO
 static const char *active_session = NULL;
 #else
 static unsigned int session_count = 0;
@@ -448,7 +448,7 @@ static void check_xorg_resolution(void)
     }
 }
 
-#ifdef HAVE_CONSOLE_KIT
+#ifdef HAVE_SESSION_INFO
 static int connection_matches_active_session(struct udscs_connection **connp,
     void *priv)
 {
@@ -484,9 +484,9 @@ void update_active_session_connection(void)
     struct udscs_connection *new_conn = NULL;
     int n;
 
-#ifdef HAVE_CONSOLE_KIT
+#ifdef HAVE_SESSION_INFO
     if (!active_session)
-        active_session = console_kit_get_active_session(console_kit);
+        active_session = session_info_get_active_session(session_info);
 
     n = udscs_server_for_all_clients(server, connection_matches_active_session,
                                      (void*)&new_conn);
@@ -515,9 +515,9 @@ void agent_connect(struct udscs_connection *conn)
         udscs_destroy_connection(&conn);
         return;
     }
-#ifdef HAVE_CONSOLE_KIT
+#ifdef HAVE_SESSION_INFO
     pid = udscs_get_peer_cred(conn).pid;
-    agent_data->session = console_kit_session_for_pid(console_kit, pid);
+    agent_data->session = session_info_session_for_pid(session_info, pid);
 #else
     session_count++;
     if (session_count == 1) {
@@ -549,7 +549,7 @@ void agent_disconnect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data = udscs_get_user_data(conn);
 
-#ifndef HAVE_CONSOLE_KIT
+#ifndef HAVE_SESSION_INFO
     if (conn == active_session_conn)
         active_session_conn = NULL;
 #endif
@@ -559,7 +559,7 @@ void agent_disconnect(struct udscs_connection *conn)
     update_active_session_connection();
 
     free(agent_data);
-#ifndef HAVE_CONSOLE_KIT
+#ifndef HAVE_SESSION_INFO
     session_count--;
 #endif
 }
@@ -680,8 +680,8 @@ void main_loop(void)
         if (n >= nfds)
             nfds = n + 1;
 
-#ifdef HAVE_CONSOLE_KIT
-        ck_fd = console_kit_get_fd(console_kit);
+#ifdef HAVE_SESSION_INFO
+        ck_fd = session_info_get_fd(session_info);
         FD_SET(ck_fd, &readfds);
         if (ck_fd >= nfds)
             nfds = ck_fd + 1;
@@ -715,9 +715,9 @@ void main_loop(void)
             }
         }
 
-#ifdef HAVE_CONSOLE_KIT
+#ifdef HAVE_SESSION_INFO
         if (FD_ISSET(ck_fd, &readfds)) {
-            active_session = console_kit_get_active_session(console_kit);
+            active_session = session_info_get_active_session(session_info);
             update_active_session_connection();
         }
 #endif
@@ -814,10 +814,10 @@ int main(int argc, char *argv[])
     }
 #endif
 
-#ifdef HAVE_CONSOLE_KIT
-    console_kit = console_kit_create(logfile);
-    if (!console_kit) {
-        fprintf(logfile, "Fatal could not connect to console kit\n");
+#ifdef HAVE_SESSION_INFO
+    session_info = session_info_create(logfile);
+    if (!session_info) {
+        fprintf(logfile, "Fatal could not get session information\n");
         vdagentd_uinput_destroy(&uinput);
         udscs_destroy_server(server);
         if (logfile != stderr)
@@ -833,8 +833,8 @@ int main(int argc, char *argv[])
     vdagentd_uinput_destroy(&uinput);
     vdagent_virtio_port_flush(&virtio_port);
     vdagent_virtio_port_destroy(&virtio_port);
-#ifdef HAVE_CONSOLE_KIT
-    console_kit_destroy(console_kit);
+#ifdef HAVE_SESSION_INFO
+    session_info_destroy(session_info);
 #endif
     udscs_destroy_server(server);
     if (unlink(VDAGENTD_SOCKET) != 0)

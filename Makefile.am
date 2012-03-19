@@ -18,7 +18,7 @@ if HAVE_CONSOLE_KIT
 src_spice_vdagentd_SOURCES += src/console-kit.c
 endif
 
-noinst_HEADERS = src/console-kit.h \
+noinst_HEADERS = src/session-info.h \
                  src/vdagentd-proto-strings.h \
                  src/vdagent-x11.h \
                  src/udscs.h \

@@ -1,6 +1,6 @@
 /*  console-kit.h vdagentd ConsoleKit integration code - header
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2012 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -19,21 +19,25 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __CONSOLE_KIT_H
-#define __CONSOLE_KIT_H
+#ifndef __SESSION_INFO_H
+#define __SESSION_INFO_H
 
 #include <stdio.h>
 #include <stdint.h>
 
-struct console_kit;
+#if defined HAVE_CONSOLE_KIT
+#define HAVE_SESSION_INFO
+#endif
 
-struct console_kit *console_kit_create(FILE *errfile);
-void console_kit_destroy(struct console_kit *ck);
+struct session_info;
 
-int console_kit_get_fd(struct console_kit *ck);
+struct session_info *session_info_create(FILE *errfile);
+void session_info_destroy(struct session_info *ck);
 
-const char *console_kit_get_active_session(struct console_kit *ck);
+int session_info_get_fd(struct session_info *ck);
+
+const char *session_info_get_active_session(struct session_info *ck);
 /* Note result must be free()-ed by caller */
-char *console_kit_session_for_pid(struct console_kit *ck, uint32_t pid);
+char *session_info_session_for_pid(struct session_info *ck, uint32_t pid);
 
 #endif
