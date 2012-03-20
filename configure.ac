@@ -65,6 +65,8 @@ if test "$with_session_info" = "auto" || test "$with_session_info" = "console-ki
     if test x"$have_console_kit" = "xyes"; then
         AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support])
         with_session_info="console-kit"
+    else
+        with_session_info="none"
     fi
 else
     have_console_kit="no"
