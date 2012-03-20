@@ -31,13 +31,13 @@ struct session_info {
     int fd;
     char *seat;
     char *active_session;
-    FILE *errfile;
+    FILE *logfile;
 };
 
 static char *console_kit_get_first_seat(struct session_info *ck);
 static char *console_kit_check_active_session_change(struct session_info *ck);
 
-struct session_info *session_info_create(FILE *errfile)
+struct session_info *session_info_create(FILE *logfile, int verbose)
 {
     struct session_info *ck;
     DBusError error;
@@ -47,23 +47,23 @@ struct session_info *session_info_create(FILE *errfile)
     if (!ck)
         return NULL;
 
-    ck->errfile = errfile;
+    ck->logfile = logfile;
 
     dbus_error_init(&error);
     ck->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
     if (ck->connection == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
-             fprintf(ck->errfile, "Unable to connect to system bus: %s\n",
+             fprintf(ck->logfile, "Unable to connect to system bus: %s\n",
                      error.message);
              dbus_error_free(&error);
         } else
-             fprintf(ck->errfile, "Unable to connect to system bus\n");
+             fprintf(ck->logfile, "Unable to connect to system bus\n");
         free(ck);
         return NULL;
     }
     
     if (!dbus_connection_get_unix_fd(ck->connection, &ck->fd)) {
-        fprintf(ck->errfile, "Unable to get connection fd\n");
+        fprintf(ck->logfile, "Unable to get connection fd\n");
         session_info_destroy(ck);
         return NULL;
     }
@@ -80,7 +80,7 @@ struct session_info *session_info_create(FILE *errfile)
     dbus_error_init(&error);
     dbus_bus_add_match(ck->connection, match, &error);
     if (dbus_error_is_set(&error)) { 
-        fprintf(ck->errfile, "Match Error (%s)\n", error.message);
+        fprintf(ck->logfile, "Match Error (%s)\n", error.message);
         session_info_destroy(ck);
         return NULL;
     }
@@ -118,7 +118,7 @@ static char *console_kit_get_first_seat(struct session_info *ck)
                                            "org.freedesktop.ConsoleKit.Manager",
                                            "GetSeats");
     if (message == NULL) {
-        fprintf(ck->errfile, "Unable to create dbus message\n");
+        fprintf(ck->logfile, "Unable to create dbus message\n");
         goto exit;
     }
 
@@ -129,18 +129,18 @@ static char *console_kit_get_first_seat(struct session_info *ck)
                                                       &error);
     if (reply == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
-            fprintf(ck->errfile, "GetSeats failed: %s\n",
+            fprintf(ck->logfile, "GetSeats failed: %s\n",
                     error.message);
             dbus_error_free(&error);
         } else
-            fprintf(ck->errfile, "GetSeats failed\n");
+            fprintf(ck->logfile, "GetSeats failed\n");
         goto exit;
     }
 
     dbus_message_iter_init(reply, &iter);
     type = dbus_message_iter_get_arg_type(&iter);
     if (type != DBUS_TYPE_ARRAY) {
-        fprintf(ck->errfile,
+        fprintf(ck->logfile,
                 "expected an array return value, got a '%c' instead\n", type);
         goto exit;
     }
@@ -148,7 +148,7 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     dbus_message_iter_recurse(&iter, &subiter);
     type = dbus_message_iter_get_arg_type(&subiter);
     if (type != DBUS_TYPE_OBJECT_PATH) {
-        fprintf(ck->errfile,
+        fprintf(ck->logfile,
                 "expected an object path element, got a '%c' instead\n", type);
         goto exit;
     }
@@ -186,7 +186,7 @@ const char *session_info_get_active_session(struct session_info *ck)
                                            "org.freedesktop.ConsoleKit.Seat",
                                            "GetActiveSession");
     if (message == NULL) {
-        fprintf(ck->errfile, "Unable to create dbus message\n");
+        fprintf(ck->logfile, "Unable to create dbus message\n");
         goto exit;
     }
 
@@ -197,11 +197,11 @@ const char *session_info_get_active_session(struct session_info *ck)
                                                       &error);
     if (reply == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
-            fprintf(ck->errfile, "GetActiveSession failed: %s\n",
+            fprintf(ck->logfile, "GetActiveSession failed: %s\n",
                     error.message);
             dbus_error_free(&error);
         } else
-            fprintf(ck->errfile, "GetActiveSession failed\n");
+            fprintf(ck->logfile, "GetActiveSession failed\n");
         goto exit;
     }
 
@@ -211,11 +211,11 @@ const char *session_info_get_active_session(struct session_info *ck)
                                DBUS_TYPE_OBJECT_PATH, &session,
                                DBUS_TYPE_INVALID)) {
         if (dbus_error_is_set(&error)) {
-            fprintf(ck->errfile, "error getting ssid from reply: %s\n",
+            fprintf(ck->logfile, "error getting ssid from reply: %s\n",
                     error.message);
             dbus_error_free(&error);
         } else
-            fprintf(ck->errfile, "error getting ssid from reply\n");
+            fprintf(ck->logfile, "error getting ssid from reply\n");
         session = NULL;
         goto exit;
     }
@@ -251,13 +251,13 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
                                            "org.freedesktop.ConsoleKit.Manager",
                                            "GetSessionForUnixProcess");
     if (message == NULL) {
-        fprintf(ck->errfile, "Unable to create dbus message\n");
+        fprintf(ck->logfile, "Unable to create dbus message\n");
         goto exit;
     }
 
     dbus_message_iter_init_append(message, &args);
     if (!dbus_message_iter_append_basic(&args, DBUS_TYPE_UINT32, &pid)) {
-        fprintf(ck->errfile, "Unable to append dbus message args\n");
+        fprintf(ck->logfile, "Unable to append dbus message args\n");
         goto exit;
     }
 
@@ -268,11 +268,11 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
                                                       &error);
     if (reply == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
-            fprintf(ck->errfile, "GetSessionForUnixProcess failed: %s\n",
+            fprintf(ck->logfile, "GetSessionForUnixProcess failed: %s\n",
                     error.message);
             dbus_error_free(&error);
         } else
-            fprintf(ck->errfile, "GetSessionForUnixProces failed\n");
+            fprintf(ck->logfile, "GetSessionForUnixProces failed\n");
         goto exit;
     }
 
@@ -282,11 +282,11 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
                                DBUS_TYPE_OBJECT_PATH, &ssid,
                                DBUS_TYPE_INVALID)) {
         if (dbus_error_is_set(&error)) {
-            fprintf(ck->errfile, "error getting ssid from reply: %s\n",
+            fprintf(ck->logfile, "error getting ssid from reply: %s\n",
                     error.message);
             dbus_error_free(&error);
         } else
-            fprintf(ck->errfile, "error getting ssid from reply\n");
+            fprintf(ck->logfile, "error getting ssid from reply\n");
         ssid = NULL;
         goto exit;
     }
@@ -322,12 +322,12 @@ static char *console_kit_check_active_session_change(struct session_info *ck)
                 continue;
             }
             if (strcmp(member, "ActiveSessionChanged")) {
-                fprintf(ck->errfile, "unexpected signal member: %s\n", member);
+                fprintf(ck->logfile, "unexpected signal member: %s\n", member);
                 dbus_message_unref(message);
                 continue;
             }
         } else {
-            fprintf(ck->errfile, "received non signal message!\n");
+            fprintf(ck->logfile, "received non signal message!\n");
             dbus_message_unref(message);
             continue;
         }
@@ -341,7 +341,7 @@ static char *console_kit_check_active_session_change(struct session_info *ck)
            ConsoleKit where it sends a string rather then an object_path
            accept object_path too in case the bug ever gets fixed */
         if (type != DBUS_TYPE_STRING && type != DBUS_TYPE_OBJECT_PATH) {
-            fprintf(ck->errfile,
+            fprintf(ck->logfile,
                     "ActiveSessionChanged message has unexpected type: '%c'\n",
                     type);
             dbus_message_unref(message);

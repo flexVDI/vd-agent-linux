@@ -815,7 +815,7 @@ int main(int argc, char *argv[])
 #endif
 
 #ifdef HAVE_SESSION_INFO
-    session_info = session_info_create(logfile);
+    session_info = session_info_create(logfile, debug);
     if (!session_info) {
         fprintf(logfile, "Fatal could not get session information\n");
         vdagentd_uinput_destroy(&uinput);

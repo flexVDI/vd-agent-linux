@@ -31,7 +31,7 @@
 
 struct session_info;
 
-struct session_info *session_info_create(FILE *errfile);
+struct session_info *session_info_create(FILE *logfile, int verbose);
 void session_info_destroy(struct session_info *ck);
 
 int session_info_get_fd(struct session_info *ck);
