@@ -1,3 +1,11 @@
+spice-agent-0.10.0
+------------------
+* Add limited support for multiple displays, see README
+* Add support for RHEL-5 (and other distributions with a non hotplug
+  capable Xorg and/or no console-kit), see README.RHEL-5
+* Add support for using libsystemd-logind as session information source
+  instead of console-kit
+
 spice-agent-0.8.1
 -----------------
 * In daemon mode the session vdagent now retries connecting to the system
