@@ -49,6 +49,7 @@ struct vdagent_virtio_port_chunk_port_data {
 
 struct vdagent_virtio_port {
     int fd;
+    int opening;
     FILE *errfile;
 
     /* Chunk read stuff, single buffer, separate header and data buffer */
@@ -90,6 +91,7 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
         free(vport);
         return NULL;
     }    
+    vport->opening = 1;
 
     vport->read_callback = read_callback;
     vport->disconnect_callback = disconnect_callback;
@@ -345,10 +347,35 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
         fprintf(vport->errfile, "reading from vdagent virtio port: %s\n",
                 strerror(errno));
     }
+    if (n == 0 && vport->opening) {
+        /* When we open the virtio serial port, the following happens:
+           1) The linux kernel virtio_console driver sends a
+              VIRTIO_CONSOLE_PORT_OPEN message to qemu
+           2) qemu's spicevmc chardev driver calls qemu_spice_add_interface to
+              register the agent chardev with the spice-server
+           3) spice-server then calls the spicevmc chardev driver's state
+              callback to let it know it is ready to receive data
+           4) The state callback sends a CHR_EVENT_OPENED to the virtio-console
+              chardev backend
+           5) The virtio-console chardev backend sends VIRTIO_CONSOLE_PORT_OPEN
+              to the linux kernel virtio_console driver
+
+           Until steps 1 - 5 have completed the linux kernel virtio_console
+           driver sees the virtio serial port as being in a disconnected state
+           and read will return 0 ! So if we blindly assume that a read 0 means
+           that the channel is closed we will hit a race here.
+
+           Therefore we ignore read returning 0 until we've successfully read
+           or written some data. If we hit this race we also sleep a bit here
+           to avoid busy waiting until the above steps complete */
+        usleep(10000);
+        return;
+    }
     if (n <= 0) {
         vdagent_virtio_port_destroy(vportp);
         return;
     }
+    vport->opening = 0;
 
     if (vport->chunk_header_read < sizeof(vport->chunk_header)) {
         vport->chunk_header_read += n;
@@ -402,6 +429,8 @@ static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **vportp)
         vdagent_virtio_port_destroy(vportp);
         return;
     }
+    if (n > 0)
+        vport->opening = 0;
 
     wbuf->pos += n;
     if (wbuf->pos == wbuf->size) {
