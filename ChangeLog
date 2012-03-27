@@ -1,20 +1,26 @@
-spice-agent-0.10.0
-------------------
+spice-vdagent-0.10.1
+--------------------
+* Fix a race condition when opening the vdagent virtio serial port, which
+  caused it to get opened / closed in rapid succession a number of times
+  on vm boot
+
+spice-vdagent-0.10.0
+--------------------
 * Add limited support for multiple displays, see README
 * Add support for RHEL-5 (and other distributions with a non hotplug
   capable Xorg and/or no console-kit), see README.RHEL-5
 * Add support for using libsystemd-logind as session information source
   instead of console-kit
 
-spice-agent-0.8.1
------------------
+spice-vdagent-0.8.1
+-------------------
 * In daemon mode the session vdagent now retries connecting to the system
   vdagentd every second, once a connection is made a version check is done,
   if the version differs (which only happens on an upgrade from one version
   to the next) the sesion vdagent re-execs itself (Marc-André Lureau)
 
-spice-agent-0.8.0
------------------
+spice-vdagent-0.8.0
+-------------------
 * Add support for copy and paste using the primary selection, to use this
   you need a spice-gtk widget based client and the latest spice-gtk code
   (Marc-André Lureau and Hans de Goede)
@@ -23,8 +29,8 @@ spice-agent-0.8.0
   as RHEL-5 (Christophe Fergeau)
 * Various small bugfixes (Hans de Goede)
 
-spice-agent-0.6.3
------------------
+spice-vdagent-0.6.3
+-------------------
 * Initial release, starting with version nr 0.6.3, to indicate that it
   more or less supports all parts of the cdagent protocol in spice-protocol
   and spice 0.6.3
