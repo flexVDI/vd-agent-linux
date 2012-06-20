@@ -83,8 +83,6 @@ struct vdagent_x11 {
     int screen;
     int width;
     int height;
-    int has_xrandr;
-    int has_xinerama;
     int has_xfixes;
     int xfixes_event_base;
     int max_prop_size;
@@ -105,8 +103,28 @@ struct vdagent_x11 {
     uint32_t selection_req_data_pos;
     uint32_t selection_req_data_size;
     Atom selection_req_atom;
+    /* resolution change state */
+    struct {
+        XRRScreenResources *res;
+        XRROutputInfo **outputs;
+        XRRCrtcInfo **crtcs;
+        int min_width;
+        int max_width;
+        int min_height;
+        int max_height;
+    } randr;
+
+    /* NB: we cache this assuming the driver isn't changed under our feet */
+    int set_crtc_config_not_functional;
+
+    int has_xrandr;
+    int xrandr_major;
+    int xrandr_minor;
+    int has_xinerama;
+    int dont_send_guest_xorg_res;
 };
 
+void vdagent_x11_randr_init(struct vdagent_x11 *x11);
 void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
                                                int width, int height);
