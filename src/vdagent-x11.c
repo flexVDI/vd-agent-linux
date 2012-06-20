@@ -67,8 +67,13 @@ static const char *vdagent_x11_sel_to_str(uint8_t selection) {
     }
 }
 
+static int debug_error_handler(Display *display, XErrorEvent *error)
+{
+    abort();
+}
+
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
-    FILE *errfile, int verbose)
+    FILE *errfile, int verbose, int sync)
 {
     struct vdagent_x11 *x11;
     XWindowAttributes attrib;
@@ -89,6 +94,11 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         fprintf(x11->errfile, "could not connect to X-server\n");
         free(x11);
         return NULL;
+    }
+
+    if (sync) {
+        XSetErrorHandler(debug_error_handler);
+        XSynchronize(x11->display, True);
     }
 
     x11->screen = DefaultScreen(x11->display);

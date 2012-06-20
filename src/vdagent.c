@@ -155,11 +155,12 @@ int main(int argc, char *argv[])
     fd_set readfds, writefds;
     int c, n, nfds, x11_fd, retval = 0;
     int do_daemonize = 1;
+    int x11_sync = 0;
     char *home, filename[1024];
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dxhs:")))
+        if (-1 == (c = getopt(argc, argv, "-dxhys:")))
             break;
         switch (c) {
         case 'd':
@@ -170,6 +171,9 @@ int main(int argc, char *argv[])
             break;
         case 'x':
             do_daemonize = 0;
+            break;
+        case 'y':
+            x11_sync = 1;
             break;
         case 'h':
             usage(stdout);
@@ -230,7 +234,7 @@ reconnect:
         goto finish;
     }
 
-    x11 = vdagent_x11_create(client, logfile, verbose);
+    x11 = vdagent_x11_create(client, logfile, verbose, x11_sync);
     if (!x11) {
         udscs_destroy_connection(&client);
         retval = 1;
