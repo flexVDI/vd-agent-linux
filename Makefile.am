@@ -5,7 +5,7 @@ sbin_PROGRAMS = src/spice-vdagentd
 
 src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS)
 src_spice_vdagent_LDADD = $(X_LIBS) $(SPICE_LIBS)
-src_spice_vdagent_SOURCES = src/vdagent.c src/vdagent-x11.c src/udscs.c
+src_spice_vdagent_SOURCES = src/vdagent.c src/vdagent-x11.c src/vdagent-x11-randr.c src/udscs.c
 
 src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(LIBSYSTEMD_LOGIN_CFLAGS) $(PCIACCESS_CFLAGS) $(SPICE_CFLAGS)
 src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(LIBSYSTEMD_LOGIN_LIBS) $(PCIACCESS_LIBS) $(SPICE_LIBS)

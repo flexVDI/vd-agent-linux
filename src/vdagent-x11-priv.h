@@ -1,0 +1,114 @@
+#ifndef VDAGENT_X11_PRIV
+#define VDAGENT_X11_PRIV
+
+#include <stdint.h>
+#include <stdio.h>
+
+#include <spice/vd_agent.h>
+
+#include <X11/extensions/Xrandr.h>
+
+/* Macros to print a message to the logfile prefixed by the selection */
+#define SELPRINTF(format, ...) \
+    fprintf(x11->errfile, "%s: " format, \
+            vdagent_x11_sel_to_str(selection), ##__VA_ARGS__)
+
+#define VSELPRINTF(format, ...) \
+    do { \
+        if (x11->verbose) { \
+            fprintf(x11->errfile, "%s: " format, \
+                    vdagent_x11_sel_to_str(selection), ##__VA_ARGS__); \
+        } \
+    } while (0)
+
+enum { owner_none, owner_guest, owner_client };
+
+/* X11 terminology is confusing a selection request is a request from an
+   app to get clipboard data from us, so iow from the spice client through
+   the vdagent channel. We handle these one at a time and queue any which
+   come in while we are still handling the current one. */
+struct vdagent_x11_selection_request {
+    XEvent event;
+    uint8_t selection;
+    struct vdagent_x11_selection_request *next;
+};
+
+/* A conversion request is X11 speak for asking an other app to give its
+   clipboard data to us, we do these on behalf of the spice client to copy
+   data from the guest to the client. Like selection requests we process
+   these one at a time. */
+struct vdagent_x11_conversion_request {
+    Atom target;
+    uint8_t selection;
+    struct vdagent_x11_conversion_request *next;
+};
+
+struct clipboard_format_tmpl {
+    uint32_t type;
+    const char *atom_names[16];
+};
+
+struct clipboard_format_info {
+    uint32_t type;
+    Atom atoms[16];
+    int atom_count;
+};
+
+static const struct clipboard_format_tmpl clipboard_format_templates[] = {
+    { VD_AGENT_CLIPBOARD_UTF8_TEXT, { "UTF8_STRING",
+      "text/plain;charset=UTF-8", "text/plain;charset=utf-8", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_PNG, { "image/png", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_BMP, { "image/bmp", "image/x-bmp",
+      "image/x-MS-bmp", "image/x-win-bitmap", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_TIFF, { "image/tiff", NULL }, },
+    { VD_AGENT_CLIPBOARD_IMAGE_JPG, { "image/jpeg", NULL }, },
+};
+
+#define clipboard_format_count (sizeof(clipboard_format_templates)/sizeof(clipboard_format_templates[0]))
+
+struct vdagent_x11 {
+    struct clipboard_format_info clipboard_formats[clipboard_format_count];
+    Display *display;
+    Atom clipboard_atom;
+    Atom clipboard_primary_atom;
+    Atom targets_atom;
+    Atom incr_atom;
+    Atom multiple_atom;
+    Window root_window;
+    Window selection_window;
+    struct udscs_connection *vdagentd;
+    FILE *errfile;
+    int verbose;
+    int fd;
+    int screen;
+    int width;
+    int height;
+    int has_xrandr;
+    int has_xinerama;
+    int has_xfixes;
+    int xfixes_event_base;
+    int max_prop_size;
+    int expected_targets_notifies[256];
+    int clipboard_owner[256];
+    int clipboard_type_count[256];
+    uint32_t clipboard_agent_types[256][256];
+    Atom clipboard_x11_targets[256][256];
+    /* Data for conversion_req which is currently being processed */
+    struct vdagent_x11_conversion_request *conversion_req;
+    int expect_property_notify;
+    uint8_t *clipboard_data;
+    uint32_t clipboard_data_size;
+    uint32_t clipboard_data_space;
+    /* Data for selection_req which is currently being processed */
+    struct vdagent_x11_selection_request *selection_req;
+    uint8_t *selection_req_data;
+    uint32_t selection_req_data_pos;
+    uint32_t selection_req_data_size;
+    Atom selection_req_atom;
+};
+
+void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
+void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
+                                               int width, int height);
+
+#endif // VDAGENT_X11_PRIV

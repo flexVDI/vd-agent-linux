@@ -37,112 +37,11 @@
 #include <assert.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/Xrandr.h>
-#include <X11/extensions/Xinerama.h>
 #include <X11/extensions/Xfixes.h>
 #include "vdagentd-proto.h"
 #include "vdagent-x11.h"
+#include "vdagent-x11-priv.h"
 
-/* Macros to print a message to the logfile prefixed by the selection */
-#define SELPRINTF(format, ...) \
-    fprintf(x11->errfile, "%s: " format, \
-            vdagent_x11_sel_to_str(selection), ##__VA_ARGS__)
-
-#define VSELPRINTF(format, ...) \
-    do { \
-        if (x11->verbose) { \
-            fprintf(x11->errfile, "%s: " format, \
-                    vdagent_x11_sel_to_str(selection), ##__VA_ARGS__); \
-        } \
-    } while (0)
-
-enum { owner_none, owner_guest, owner_client };
-
-/* X11 terminology is confusing a selection request is a request from an
-   app to get clipboard data from us, so iow from the spice client through
-   the vdagent channel. We handle these one at a time and queue any which
-   come in while we are still handling the current one. */
-struct vdagent_x11_selection_request {
-    XEvent event;
-    uint8_t selection;
-    struct vdagent_x11_selection_request *next;
-};
-
-/* A conversion request is X11 speak for asking an other app to give its
-   clipboard data to us, we do these on behalf of the spice client to copy
-   data from the guest to the client. Like selection requests we process
-   these one at a time. */
-struct vdagent_x11_conversion_request {
-    Atom target;
-    uint8_t selection;
-    struct vdagent_x11_conversion_request *next;
-};
-
-struct clipboard_format_tmpl {
-    uint32_t type;
-    const char *atom_names[16];
-};
-
-struct clipboard_format_info {
-    uint32_t type;
-    Atom atoms[16];
-    int atom_count;
-};
-
-static const struct clipboard_format_tmpl clipboard_format_templates[] = {
-    { VD_AGENT_CLIPBOARD_UTF8_TEXT, { "UTF8_STRING",
-      "text/plain;charset=UTF-8", "text/plain;charset=utf-8", NULL }, },
-    { VD_AGENT_CLIPBOARD_IMAGE_PNG, { "image/png", NULL }, },
-    { VD_AGENT_CLIPBOARD_IMAGE_BMP, { "image/bmp", "image/x-bmp",
-      "image/x-MS-bmp", "image/x-win-bitmap", NULL }, },
-    { VD_AGENT_CLIPBOARD_IMAGE_TIFF, { "image/tiff", NULL }, },
-    { VD_AGENT_CLIPBOARD_IMAGE_JPG, { "image/jpeg", NULL }, },
-};
-
-#define clipboard_format_count (sizeof(clipboard_format_templates)/sizeof(clipboard_format_templates[0]))
-
-struct vdagent_x11 {
-    struct clipboard_format_info clipboard_formats[clipboard_format_count];
-    Display *display;
-    Atom clipboard_atom;
-    Atom clipboard_primary_atom;
-    Atom targets_atom;
-    Atom incr_atom;
-    Atom multiple_atom;
-    Window root_window;
-    Window selection_window;
-    struct udscs_connection *vdagentd;
-    FILE *errfile;
-    int verbose;
-    int fd;
-    int screen;
-    int width;
-    int height;
-    int has_xrandr;
-    int has_xinerama;
-    int has_xfixes;
-    int xfixes_event_base;
-    int max_prop_size;
-    int expected_targets_notifies[256];
-    int clipboard_owner[256];
-    int clipboard_type_count[256];
-    uint32_t clipboard_agent_types[256][256];
-    Atom clipboard_x11_targets[256][256];
-    /* Data for conversion_req which is currently being processed */
-    struct vdagent_x11_conversion_request *conversion_req;
-    int expect_property_notify;
-    uint8_t *clipboard_data;
-    uint32_t clipboard_data_size;
-    uint32_t clipboard_data_space;
-    /* Data for selection_req which is currently being processed */
-    struct vdagent_x11_selection_request *selection_req;
-    uint8_t *selection_req_data;
-    uint32_t selection_req_data_pos;
-    uint32_t selection_req_data_size;
-    Atom selection_req_atom;
-};
-
-static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event, int incr);
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11);
@@ -218,27 +117,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         fprintf(x11->errfile, "Selection window: %u\n",
                 (unsigned int)x11->selection_window);
 
-    if (XRRQueryExtension(x11->display, &i, &i))
-        x11->has_xrandr = 1;
-
-    if (XineramaQueryExtension(x11->display, &i, &i))
-        x11->has_xinerama = 1;
-
-    switch (x11->has_xrandr << 4 | x11->has_xinerama) {
-    case 0x00:
-        fprintf(x11->errfile, "Neither Xrandr nor Xinerama found, assuming single monitor setup\n");
-        break;
-    case 0x01:
-        if (x11->verbose)
-            fprintf(x11->errfile, "Found Xinerama extension without Xrandr, assuming a multi monitor setup\n");
-        break;
-    case 0x10:
-        fprintf(x11->errfile, "Found Xrandr but no Xinerama, weird! Assuming a single monitor setup\n");
-        break;
-    case 0x11:
-        /* Standard single monitor setup, nothing to see here */
-        break;
-    }
+    vdagent_x11_randr_init(x11);
 
     if (XFixesQueryExtension(x11->display, &x11->xfixes_event_base, &i) &&
         XFixesQueryVersion(x11->display, &major, &minor) && major >= 1) {
@@ -488,19 +367,13 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
 
     switch (event.type) {
     case ConfigureNotify:
+        // TODO: handle CrtcConfigureNotify, OutputConfigureNotify can be ignored.
         if (event.xconfigure.window != x11->root_window)
             break;
 
         handled = 1;
-
-        if (event.xconfigure.width  == x11->width &&
-            event.xconfigure.height == x11->height)
-            break;
-
-        x11->width  = event.xconfigure.width;
-        x11->height = event.xconfigure.height;
-
-        vdagent_x11_send_daemon_guest_xorg_res(x11);
+        vdagent_x11_randr_handle_root_size_change(x11,
+                event.xconfigure.width, event.xconfigure.height);
         break;
     case MappingNotify:
         /* These are uninteresting */
@@ -579,53 +452,6 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11)
         XNextEvent(x11->display, &event);
         vdagent_x11_handle_event(x11, event);
     }
-}
-
-static void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
-{
-    struct vdagentd_guest_xorg_resolution *res = NULL;
-    XineramaScreenInfo *screen_info = NULL;
-    int i, screen_count = 0;
-
-    if (x11->has_xinerama)
-        screen_info = XineramaQueryScreens(x11->display, &screen_count);
-
-    if (screen_count == 0)
-        screen_count = 1;
-
-    res = malloc(screen_count * sizeof(*res));
-    if (!res) {
-        fprintf(x11->errfile, "out of memory while trying to send resolutions, not sending resolutions.\n");
-        if (screen_info)
-            XFree(screen_info);
-        return;
-    }
-
-    if (screen_info) {
-        for (i = 0; i < screen_count; i++) {
-            if (screen_info[i].screen_number >= screen_count) {
-                fprintf(x11->errfile, "Invalid screen number in xinerama screen info (%d >= %d)\n",
-                        screen_info[i].screen_number, screen_count);
-                XFree(screen_info);
-                free(res);
-                return;
-            }
-            res[screen_info[i].screen_number].width = screen_info[i].width;
-            res[screen_info[i].screen_number].height = screen_info[i].height;
-            res[screen_info[i].screen_number].x = screen_info[i].x_org;
-            res[screen_info[i].screen_number].y = screen_info[i].y_org;
-        }
-        XFree(screen_info);
-    } else {
-        res[0].width  = x11->width;
-        res[0].height = x11->height;
-        res[0].x = 0;
-        res[0].y = 0;
-    }
-
-    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width,
-                x11->height, (uint8_t *)res, screen_count * sizeof(*res));
-    free(res);
 }
 
 static const char *vdagent_x11_get_atom_name(struct vdagent_x11 *x11, Atom a)
@@ -1122,67 +948,6 @@ static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
         vdagent_x11_next_selection_request(x11);
         vdagent_x11_handle_selection_request(x11);
     }
-}
-
-void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
-                                    VDAgentMonitorsConfig *mon_config)
-{
-    int i, num_sizes = 0;
-    int best = -1;
-    unsigned int closest_diff = -1;
-    XRRScreenSize* sizes;
-    XRRScreenConfiguration* config;
-    Rotation rotation;
-
-    if (!x11->has_xrandr)
-        return;
-
-    if (mon_config->num_of_monitors != 1) {
-        fprintf(x11->errfile,
-                "Only 1 monitor supported, ignoring additional monitors\n");
-    }
-
-    sizes = XRRSizes(x11->display, x11->screen, &num_sizes);
-    if (!sizes || !num_sizes) {
-        fprintf(x11->errfile, "XRRSizes failed\n");
-        return;
-    }
-
-    /* Find the closest size which will fit within the monitor */
-    for (i = 0; i < num_sizes; i++) {
-        if (sizes[i].width  > mon_config->monitors[0].width ||
-            sizes[i].height > mon_config->monitors[0].height)
-            continue; /* Too large for the monitor */
-
-        unsigned int wdiff = mon_config->monitors[0].width  - sizes[i].width;
-        unsigned int hdiff = mon_config->monitors[0].height - sizes[i].height;
-        unsigned int diff = wdiff * wdiff + hdiff * hdiff;
-        if (diff < closest_diff) {
-            closest_diff = diff;
-            best = i;
-        }
-    }
-
-    if (best == -1) {
-        fprintf(x11->errfile, "no suitable resolution found for monitor\n");
-        return;
-    }
-
-    config = XRRGetScreenInfo(x11->display, x11->root_window);
-    if(!config) {
-        fprintf(x11->errfile, "get screen info failed\n");
-        return;
-    }
-    XRRConfigCurrentConfiguration(config, &rotation);
-    XRRSetScreenConfig(x11->display, config, x11->root_window, best,
-                       rotation, CurrentTime);
-    XRRFreeScreenConfigInfo(config);
-    x11->width = sizes[best].width;
-    x11->height = sizes[best].height;
-    vdagent_x11_send_daemon_guest_xorg_res(x11);
-
-    /* Flush output buffers and consume any pending events */
-    vdagent_x11_do_read(x11);
 }
 
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11,
