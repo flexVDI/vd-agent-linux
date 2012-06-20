@@ -597,6 +597,22 @@ int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *mon)
     return 1;
 }
 
+static void dump_monitors_config(struct vdagent_x11 *x11,
+                                 VDAgentMonitorsConfig *mon_config,
+                                 const char *prefix)
+{
+    int i;
+    VDAgentMonConfig *m;
+
+    fprintf(x11->errfile, "%s: %d, %x\n", prefix, mon_config->num_of_monitors,
+            mon_config->flags);
+    for (i = 0 ; i < mon_config->num_of_monitors; ++i) {
+        m = &mon_config->monitors[i];
+        fprintf(x11->errfile, "received monitor %d config %dx%d+%d+%d\n", i,
+                m->width, m->height, m->x, m->y);
+    }
+}
+
 /*
  * Set monitor configuration according to client request.
  *
@@ -629,9 +645,17 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         goto exit;
     }
 
+    if (x11->verbose) {
+        dump_monitors_config(x11, mon_config, "from guest");
+    }
+
     zero_base_monitors(x11, mon_config, &primary_w, &primary_h);
 
     constrain_to_screen(x11, &primary_w, &primary_h);
+
+    if (x11->verbose) {
+        dump_monitors_config(x11, mon_config, "after zeroing");
+    }
     /*
      * Set screen size once now. If the screen size is reduced it may (will
      * probably) invalidate a currently set crtc mode, so disable crtcs first.
