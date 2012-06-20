@@ -47,6 +47,57 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
     vdagent_x11_send_daemon_guest_xorg_res(x11);
 }
 
+static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int height,
+                                   int *out_width, int *out_height)
+{
+    int i, num_sizes = 0;
+    int best = -1;
+    unsigned int closest_diff = -1;
+    XRRScreenSize *sizes;
+    XRRScreenConfiguration *config;
+    Rotation rotation;
+
+    sizes = XRRSizes(x11->display, x11->screen, &num_sizes);
+    if (!sizes || !num_sizes) {
+        fprintf(x11->errfile, "XRRSizes failed\n");
+        return 0;
+    }
+
+    /* Find the closest size which will fit within the monitor */
+    for (i = 0; i < num_sizes; i++) {
+        if (sizes[i].width  > width ||
+            sizes[i].height > height)
+            continue; /* Too large for the monitor */
+
+        unsigned int wdiff = width  - sizes[i].width;
+        unsigned int hdiff = height - sizes[i].height;
+        unsigned int diff = wdiff * wdiff + hdiff * hdiff;
+        if (diff < closest_diff) {
+            closest_diff = diff;
+            best = i;
+        }
+    }
+
+    if (best == -1) {
+        fprintf(x11->errfile, "no suitable resolution found for monitor\n");
+        return 0;
+    }
+
+    config = XRRGetScreenInfo(x11->display, x11->root_window);
+    if(!config) {
+        fprintf(x11->errfile, "get screen info failed\n");
+        return 0;
+    }
+    XRRConfigCurrentConfiguration(config, &rotation);
+    XRRSetScreenConfig(x11->display, config, x11->root_window, best,
+                       rotation, CurrentTime);
+    XRRFreeScreenConfigInfo(config);
+
+    *out_width = sizes[best].width;
+    *out_height = sizes[best].height;
+    return 1;
+}
+
 /*
  * Set monitor configuration according to client request.
  *
@@ -60,13 +111,6 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                                     VDAgentMonitorsConfig *mon_config)
 {
-    int i, num_sizes = 0;
-    int best = -1;
-    unsigned int closest_diff = -1;
-    XRRScreenSize *sizes;
-    XRRScreenConfiguration *config;
-    Rotation rotation;
-
     if (!x11->has_xrandr)
         return;
 
@@ -75,43 +119,11 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                 "Only 1 monitor supported, ignoring additional monitors\n");
     }
 
-    sizes = XRRSizes(x11->display, x11->screen, &num_sizes);
-    if (!sizes || !num_sizes) {
-        fprintf(x11->errfile, "XRRSizes failed\n");
+    if (!set_screen_to_best_size(x11, mon_config->monitors[0].width,
+                                 mon_config->monitors[0].height,
+                                 &x11->width, &x11->height)) {
         return;
     }
-
-    /* Find the closest size which will fit within the monitor */
-    for (i = 0; i < num_sizes; i++) {
-        if (sizes[i].width  > mon_config->monitors[0].width ||
-            sizes[i].height > mon_config->monitors[0].height)
-            continue; /* Too large for the monitor */
-
-        unsigned int wdiff = mon_config->monitors[0].width  - sizes[i].width;
-        unsigned int hdiff = mon_config->monitors[0].height - sizes[i].height;
-        unsigned int diff = wdiff * wdiff + hdiff * hdiff;
-        if (diff < closest_diff) {
-            closest_diff = diff;
-            best = i;
-        }
-    }
-
-    if (best == -1) {
-        fprintf(x11->errfile, "no suitable resolution found for monitor\n");
-        return;
-    }
-
-    config = XRRGetScreenInfo(x11->display, x11->root_window);
-    if(!config) {
-        fprintf(x11->errfile, "get screen info failed\n");
-        return;
-    }
-    XRRConfigCurrentConfiguration(config, &rotation);
-    XRRSetScreenConfig(x11->display, config, x11->root_window, best,
-                       rotation, CurrentTime);
-    XRRFreeScreenConfigInfo(config);
-    x11->width = sizes[best].width;
-    x11->height = sizes[best].height;
     vdagent_x11_send_daemon_guest_xorg_res(x11);
 
     /* Flush output buffers and consume any pending events (ConfigureNotify) */
