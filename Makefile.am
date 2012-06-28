@@ -37,9 +37,6 @@ xdgautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 gdmautostartdir = $(datadir)/gdm/autostart/LoginWindow
 gdmautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 
-initdir = $(sysconfdir)/rc.d/init.d
-init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
-
 install-data-local:
 	$(mkdir_p) $(DESTDIR)$(localstatedir)/log/spice-vdagentd
 	$(mkdir_p) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
@@ -47,6 +44,19 @@ install-data-local:
 
 tmpfilesdir = $(sysconfdir)/tmpfiles.d
 tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
+
+modulesdir = $(sysconfdir)/modules-load.d
+modules_DATA = $(top_srcdir)/data/modules-load.d/spice-vdagentd.conf
+
+if INIT_SCRIPT_RED_HAT
+initdir = $(sysconfdir)/rc.d/init.d
+init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
+endif
+
+if INIT_SCRIPT_SYSTEMD
+systemdunitdir = $(SYSTEMDSYSTEMUNITDIR)
+systemdunit_DATA = $(top_srcdir)/data/spice-vdagentd.service
+endif
 
 EXTRA_DIST =					\
 	README.RHEL-5				\
@@ -56,4 +66,8 @@ EXTRA_DIST =					\
 	data/spice-vdagentd.service		\
 	data/tmpfiles.d/spice-vdagentd.conf	\
 	data/xorg.conf.RHEL-5			\
+	$(NULL)
+
+DISTCHECK_CONFIGURE_FLAGS =			\
+	--with-init-script=redhat		\
 	$(NULL)

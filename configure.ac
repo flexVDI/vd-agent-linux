@@ -13,6 +13,7 @@ AC_HEADER_STDC
 AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_DEFINE(_GNU_SOURCE, [1], [Enable GNU extensions])
+PKG_PROG_PKG_CONFIG
 
 AC_ARG_WITH([session-info],
   [AS_HELP_STRING([--with-session-info=@<:@auto/console-kit/systemd/none@:>@],
@@ -22,6 +23,48 @@ AC_ARG_WITH([session-info],
      *) AC_MSG_ERROR([invalid session-info type specified]) ;;
    esac],
   [with_session_info="auto"])
+
+dnl based on libvirt configure --init-script
+AC_MSG_CHECKING([for init script flavor])
+AC_ARG_WITH([init-script],
+  [AC_HELP_STRING(
+     [--with-init-script=@<:@redhat/systemd/systemd+redhat/check@:>@],
+     [Style of init script to install @<:@default=check@:>@])],
+     [],[with_init_script=check])
+init_redhat=no
+init_systemd=no
+case "$with_init_script" in
+    systemd+redhat)
+       init_redhat=yes
+       init_systemd=yes
+       ;;
+    systemd)
+       init_systemd=yes
+       ;;
+    redhat)
+       init_redhat=yes
+       ;;
+    none)
+       ;;
+    check)
+       with_init_script=none
+       if test "$cross_compiling" != yes && test -f /etc/redhat-release; then
+          init_redhat=yes
+          with_init_script=redhat
+       fi
+       ;;
+    *)
+       AC_MSG_ERROR([Unknown initscript flavour $with_init_script])
+    ;;
+esac
+AM_CONDITIONAL([INIT_SCRIPT_RED_HAT], test "$init_redhat" = "yes")
+AM_CONDITIONAL([INIT_SCRIPT_SYSTEMD], test "$init_systemd" = "yes")
+AC_MSG_RESULT($with_init_script)
+
+if test "x$init_systemd" = "xyes"; then
+  SYSTEMDSYSTEMUNITDIR=`${PKG_CONFIG} systemd --variable=systemdsystemunitdir`
+  AC_SUBST(SYSTEMDSYSTEMUNITDIR)
+fi
 
 AC_ARG_ENABLE([pciaccess],
               [AS_HELP_STRING([--enable-pciaccess], [Enable libpciaccess use for auto generation of Xinerama xorg.conf (default: yes)])],
@@ -33,7 +76,6 @@ AC_ARG_ENABLE([static-uinput],
               [enable_static_uinput="$enableval"],
               [enable_static_uinput="no"])
 
-PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
 PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
 
@@ -100,6 +142,9 @@ AC_MSG_NOTICE([
         session-info:             ${with_session_info}
         pciaccess:                ${enable_pciaccess}
         static uinput:            ${enable_static_uinput}
+
+        install RH initscript:    ${init_redhat}
+        install systemd service:  ${init_systemd}
 
         Now type 'make' to build $PACKAGE
 
