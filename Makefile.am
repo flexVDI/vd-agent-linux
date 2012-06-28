@@ -1,4 +1,5 @@
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
+NULL =
 
 bin_PROGRAMS = src/spice-vdagent
 sbin_PROGRAMS = src/spice-vdagentd
@@ -47,5 +48,12 @@ install-data-local:
 tmpfilesdir = $(sysconfdir)/tmpfiles.d
 tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
 
-EXTRA_DIST = $(xdgautostart_DATA) $(gdmautostart_DATA) $(init_SCRIPTS) \
-             $(tmpfiles_DATA) README.RHEL-5 data/xorg.conf.RHEL-5
+EXTRA_DIST =					\
+	README.RHEL-5				\
+	data/modules-load.d/spice-vdagentd.conf	\
+	data/spice-vdagent.desktop		\
+	data/spice-vdagentd			\
+	data/spice-vdagentd.service		\
+	data/tmpfiles.d/spice-vdagentd.conf	\
+	data/xorg.conf.RHEL-5			\
+	$(NULL)
