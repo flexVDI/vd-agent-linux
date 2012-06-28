@@ -45,7 +45,7 @@ install-data-local:
 
 
 tmpfilesdir = $(sysconfdir)/tmpfiles.d
-tmpfiles_DATA = $(top_srcdir)/data/spice-vdagentd.conf
+tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
 
 EXTRA_DIST = $(xdgautostart_DATA) $(gdmautostart_DATA) $(init_SCRIPTS) \
              $(tmpfiles_DATA) README.RHEL-5 data/xorg.conf.RHEL-5
