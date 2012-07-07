@@ -589,7 +589,7 @@ int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *mon)
         /* NOTE 2: width set by X is a multiple of 8, so ignore lower 3 bits */
         if ((mode->width & ~7) != (client_mode->width & ~7) ||
             mode->height != client_mode->height ||
-            crtc->x != client_mode->x ||
+            (crtc->x & ~7) != (client_mode->x & ~7) ||
             crtc->y != client_mode->y) {
             return 0;
         }
