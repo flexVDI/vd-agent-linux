@@ -656,30 +656,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     if (x11->verbose) {
         dump_monitors_config(x11, mon_config, "after zeroing");
     }
-    /*
-     * Set screen size once now. If the screen size is reduced it may (will
-     * probably) invalidate a currently set crtc mode, so disable crtcs first.
-     */
-    if (x11->width > primary_w || x11->height > primary_h) {
-        for (i = 0 ; i < x11->randr.res->ncrtc; ++i) {
-            /* This can fail if we are not in vt, xserver/RRCrtcSet checks
-             * vtSema */
-            s = XRRSetCrtcConfig(x11->display, x11->randr.res,
-                                 x11->randr.res->crtcs[i],
-                                 CurrentTime, 0, 0, None, RR_Rotate_0,
-                                 NULL, 0);
-            if (s != RRSetConfigSuccess) {
-                goto exit;
-            }
-        }
-    }
-    if (primary_w != x11->width || primary_h != x11->height) {
-        arm_error_handler(x11);
-        XRRSetScreenSize(x11->display, x11->root_window, primary_w, primary_h,
-                         DisplayWidthMM(x11->display, x11->screen),
-                         DisplayHeightMM(x11->display, x11->screen));
-        check_error_handler(x11);
-    }
+
     for (i = 0; i < mon_config->num_of_monitors; ++i) {
         /* Try to create the requested resolution */
         width = mon_config->monitors[i].width;
@@ -691,6 +668,15 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
             set_screen_to_best_size(x11, width, height, &width, &height);
         }
     }
+
+    if (primary_w != x11->width || primary_h != x11->height) {
+        arm_error_handler(x11);
+        XRRSetScreenSize(x11->display, x11->root_window, primary_w, primary_h,
+                         DisplayWidthMM(x11->display, x11->screen),
+                         DisplayHeightMM(x11->display, x11->screen));
+        check_error_handler(x11);
+    }
+
     if (!update_randr_res(x11)) {
         fprintf(x11->errfile, "get screen info failed\n");
     }
