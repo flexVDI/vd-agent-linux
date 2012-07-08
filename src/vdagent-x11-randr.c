@@ -380,6 +380,25 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     return 1;
 }
 
+static int xrandr_disable_output(struct vdagent_x11 *x11, int output)
+{
+    Status s;
+
+    if (!x11->randr.res || output >= x11->randr.res->noutput || output < 0) {
+        fprintf(x11->errfile, "%s: program error: missing RANDR or bad output\n",
+                __FUNCTION__);
+        return;
+    }
+
+    s = XRRSetCrtcConfig(x11->display, x11->randr.res,
+                         x11->randr.res->crtcs[output],
+                         CurrentTime, 0, 0, None, RR_Rotate_0,
+                         NULL, 0);
+
+    if (s != RRSetConfigSuccess)
+        fprintf(x11->errfile, "failed to disable monitor\n");
+}
+
 static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int height,
                                    int *out_width, int *out_height){
     int i, num_sizes = 0;
@@ -656,6 +675,9 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     if (x11->verbose) {
         dump_monitors_config(x11, mon_config, "after zeroing");
     }
+
+    for (i = mon_config->num_of_monitors; i < x11->randr.res->noutput; i++)
+        xrandr_disable_output(x11, i);
 
     for (i = 0; i < mon_config->num_of_monitors; ++i) {
         /* Try to create the requested resolution */
