@@ -17,7 +17,7 @@ static int error_handler(Display *display, XErrorEvent *error)
 static void arm_error_handler(struct vdagent_x11 *x11)
 {
     caught_error = 0;
-    XSync(x11->display, True);
+    XSync(x11->display, False);
     old_error_handler = XSetErrorHandler(error_handler);
 }
 
