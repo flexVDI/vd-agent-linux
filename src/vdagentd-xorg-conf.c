@@ -1,6 +1,6 @@
 /*  vdagentd.c vdagentd xorg.conf writing code
 
-    Copyright 2011 Red Hat, Inc.
+    Copyright 2011, 2012 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -29,22 +29,21 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <syslog.h>
 #include "vdagentd-xorg-conf.h"
 
 #define FPRINTF(...) \
     do { \
         r = fprintf(f, __VA_ARGS__); \
         if (r < 0) { \
-            fprintf(logfile, "Error writing to %s: %s\n", \
-                    xorg_conf, strerror(errno)); \
+            syslog(LOG_ERR, "Error writing to %s: %m", xorg_conf); \
             fclose(f); \
             pci_system_cleanup(); \
             return; \
         } \
     } while(0)
 
-void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf,
-                              FILE *logfile)
+void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf)
 {
 #ifdef HAVE_PCIACCESS
     int i, r, count, min_x = INT_MAX, min_y = INT_MAX;
@@ -62,36 +61,35 @@ void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf,
 
     r = rename(xorg_conf, xorg_conf_old);
     if (r && errno != ENOENT) {
-        fprintf(logfile,
-                "Error renaming %s to %s: %s, not generating xorg.conf\n",
-                xorg_conf, xorg_conf_old, strerror(errno));
+        syslog(LOG_ERR,
+               "Error renaming %s to %s: %m, not generating xorg.conf",
+               xorg_conf, xorg_conf_old);
         return;
     }
 
     r = pci_system_init();
     if (r) {
-        fprintf(logfile, "Error initializing libpciaccess: %d, not generating xorg.conf\n", r);
+        syslog(LOG_ERR, "Error initializing libpciaccess: %d, not generating xorg.conf", r);
         return;
     }
 
     it = pci_id_match_iterator_create(&qxl_id_match);
     if (!it) {
-        fprintf(logfile, "Error could not create pci id iterator for QXL devices, not generating xorg.conf\n");
+        syslog(LOG_ERR, "Error could not create pci id iterator for QXL devices, not generating xorg.conf");
         pci_system_cleanup();
         return;
     }
 
     dev = pci_device_next(it);
     if (!dev) {
-        fprintf(logfile, "No QXL devices found, not generating xorg.conf\n");
+        syslog(LOG_ERR, "No QXL devices found, not generating xorg.conf");
         pci_system_cleanup();
         return;
     }
 
     f = fopen(xorg_conf, "w");
     if (!f) {
-        fprintf(logfile, "Error opening %s for writing: %s\n",
-                xorg_conf, strerror(errno));
+        syslog(LOG_ERR, "Error opening %s for writing: %m", xorg_conf);
         pci_system_cleanup();
         return;
     }
@@ -122,8 +120,9 @@ void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf,
     } while ((dev = pci_device_next(it)));
 
     if (i < monitor_conf->num_of_monitors) {
-        fprintf(logfile, "Client has %d monitors, but only %d qxl devices found\n",
-                monitor_conf->num_of_monitors, i);
+        syslog(LOG_WARNING,
+               "Client has %d monitors, but only %d qxl devices found",
+               monitor_conf->num_of_monitors, i);
         FPRINTF("# Client has %d monitors, but only %d qxl devices found\n",
                 monitor_conf->num_of_monitors, i);
         FPRINTF("# Only generation %d \"Screen\" sections\n\n", i);

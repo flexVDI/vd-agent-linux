@@ -1,6 +1,6 @@
 /*  vdagentd.c vdagentd xorg.conf writing code
 
-    Copyright 2011 Red Hat, Inc.
+    Copyright 2011, 2012 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -24,7 +24,6 @@
 #include <stdio.h>
 #include <spice/vd_agent.h>
 
-void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf,
-                              FILE *logfile);
+void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf);
 
 #endif

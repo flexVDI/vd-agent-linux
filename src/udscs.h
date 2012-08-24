@@ -62,8 +62,7 @@ struct udscs_server *udscs_create_server(const char *socketname,
     udscs_connect_callback connect_callback,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback,
-    const char * const type_to_string[], int no_types,
-    FILE *logfile, FILE *errfile);
+    const char * const type_to_string[], int no_types, int debug);
 
 void udscs_destroy_server(struct udscs_server *server);
 
@@ -71,8 +70,7 @@ void udscs_destroy_server(struct udscs_server *server);
 struct udscs_connection *udscs_connect(const char *socketname,
     udscs_read_callback read_callback,
     udscs_disconnect_callback disconnect_callback,
-    const char * const type_to_string[], int no_types,
-    FILE *logfile, FILE *errfile);
+    const char * const type_to_string[], int no_types, int debug);
 
 /* The contents of connp will be made NULL */
 void udscs_destroy_connection(struct udscs_connection **connp);

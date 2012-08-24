@@ -23,16 +23,16 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <systemd/sd-login.h>
 
 struct session_info {
-    FILE *logfile;
     int verbose;
     sd_login_monitor *mon;
     char *session;
 };
 
-struct session_info *session_info_create(FILE *logfile, int verbose)
+struct session_info *session_info_create(int verbose)
 {
     struct session_info *si;
     int r;
@@ -41,12 +41,11 @@ struct session_info *session_info_create(FILE *logfile, int verbose)
     if (!si)
         return NULL;
 
-    si->logfile = logfile;
     si->verbose = verbose;
 
     r = sd_login_monitor_new("session", &si->mon);
     if (r < 0) {
-        fprintf(logfile, "Error creating login monitor: %s\n", strerror(-r));
+        syslog(LOG_ERR, "Error creating login monitor: %s", strerror(-r));
         free(si);
         return NULL;
     }
@@ -75,12 +74,12 @@ const char *session_info_get_active_session(struct session_info *si)
     r = sd_seat_get_active("seat0", &si->session, NULL);
     /* ENOENT happens when a seat is switching from one session to another */
     if (r < 0 && r != ENOENT)
-        fprintf(si->logfile, "Error getting active session: %s\n",
+        syslog(LOG_ERR, "Error getting active session: %s",
                 strerror(-r));
 
     if (si->verbose && si->session &&
             (!old_session || strcmp(old_session, si->session)))
-        fprintf(si->logfile, "Active session: %s\n", si->session);
+        syslog(LOG_INFO, "Active session: %s", si->session);
 
     sd_login_monitor_flush(si->mon);
     free(old_session);
@@ -95,10 +94,10 @@ char *session_info_session_for_pid(struct session_info *si, uint32_t pid)
 
     r = sd_pid_get_session(pid, &session);
     if (r < 0)
-        fprintf(si->logfile, "Error getting session for pid %u: %s\n",
+        syslog(LOG_ERR, "Error getting session for pid %u: %s",
                 pid, strerror(-r));
     else if (si->verbose)
-        fprintf(si->logfile, "Session for pid %u: %s\n", pid, session);
+        syslog(LOG_INFO, "Session for pid %u: %s", pid, session);
 
     return session;
 }

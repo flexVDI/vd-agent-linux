@@ -10,13 +10,13 @@
 
 /* Macros to print a message to the logfile prefixed by the selection */
 #define SELPRINTF(format, ...) \
-    fprintf(x11->errfile, "%s: " format, \
+    syslog(LOG_ERR, "%s: " format, \
             vdagent_x11_sel_to_str(selection), ##__VA_ARGS__)
 
 #define VSELPRINTF(format, ...) \
     do { \
-        if (x11->verbose) { \
-            fprintf(x11->errfile, "%s: " format, \
+        if (x11->debug) { \
+            syslog(LOG_DEBUG, "%s: " format, \
                     vdagent_x11_sel_to_str(selection), ##__VA_ARGS__); \
         } \
     } while (0)
@@ -77,8 +77,7 @@ struct vdagent_x11 {
     Window root_window;
     Window selection_window;
     struct udscs_connection *vdagentd;
-    FILE *errfile;
-    int verbose;
+    int debug;
     int fd;
     int screen;
     int width;

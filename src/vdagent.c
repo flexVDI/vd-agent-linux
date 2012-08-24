@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -40,10 +41,9 @@
 #include "vdagent-x11.h"
 
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
-static int verbose = 0;
+static int debug = 0;
 static struct vdagent_x11 *x11 = NULL;
 static struct udscs_connection *client = NULL;
-static FILE *logfile = NULL;
 static int quit = 0;
 static int version_mismatch = 0;
 
@@ -76,17 +76,15 @@ void daemon_read_complete(struct udscs_connection **connp,
         break;
     case VDAGENTD_VERSION:
         if (strcmp((char *)data, VERSION) != 0) {
-            fprintf(logfile,
-                    "Fatal vdagentd version mismatch: got %s expected %s\n",
-                    data, VERSION);
+            syslog(LOG_INFO, "vdagentd version mismatch: got %s expected %s",
+                   data, VERSION);
             udscs_destroy_connection(connp);
             version_mismatch = 1;
         }
         break;
     default:
-        if (verbose)
-            fprintf(logfile, "Unknown message from vdagentd type: %d\n",
-                    header->type);
+        syslog(LOG_ERR, "Unknown message from vdagentd type: %d, ignoring",
+               header->type);
         free(data);
     }
 }
@@ -96,7 +94,7 @@ int client_setup(int reconnect)
     while (!quit) {
         client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
                                vdagentd_messages, VDAGENTD_NO_MESSAGES,
-                               verbose ? logfile : NULL, logfile);
+                               debug);
         if (client || !reconnect || quit) {
             break;
         }
@@ -113,7 +111,7 @@ static void usage(FILE *fp)
             "  -h         print this text\n"
             "  -d         log debug messages\n"
             "  -s <port>  set virtio serial port  [%s]\n"
-            "  -x         don't daemonize (and log to logfile)\n",
+            "  -x         don't daemonize\n",
             portdev);
 }
 
@@ -134,11 +132,9 @@ void daemonize(void)
         x = open("/dev/null", O_RDWR); x = dup(x); x = dup(x);
         break;
     case -1:
-        fprintf(logfile, "fork: %s\n", strerror(errno));
+        syslog(LOG_ERR, "fork: %s", strerror(errno));
         retval = 1;
     default:
-        if (logfile != stderr)
-            fclose(logfile);
         exit(retval);
     }
 }
@@ -153,10 +149,9 @@ static int file_test(const char *path)
 int main(int argc, char *argv[])
 {
     fd_set readfds, writefds;
-    int c, n, nfds, x11_fd, retval = 0;
+    int c, n, nfds, x11_fd;
     int do_daemonize = 1;
     int x11_sync = 0;
-    char *home, filename[1024];
     struct sigaction act;
 
     for (;;) {
@@ -164,7 +159,7 @@ int main(int argc, char *argv[])
             break;
         switch (c) {
         case 'd':
-            verbose++;
+            debug++;
             break;
         case 's':
             portdev = optarg;
@@ -192,29 +187,13 @@ int main(int argc, char *argv[])
     sigaction(SIGTERM, &act, NULL);
     sigaction(SIGQUIT, &act, NULL);
 
-    logfile = stderr;
-    home = getenv("HOME");
-    if (home) {
-        snprintf(filename, sizeof(filename), "%s/.spice-vdagent", home);
-        n = mkdir(filename, 0755);
-        snprintf(filename, sizeof(filename), "%s/.spice-vdagent/log", home);
-        if (do_daemonize) {
-            logfile = fopen(filename, "w");
-            if (!logfile) {
-                fprintf(stderr, "Error opening %s: %s\n", filename,
-                        strerror(errno));
-                logfile = stderr;
-            }
-        }
-    } else {
-        fprintf(stderr, "Could not get home directory, logging to stderr\n");
-    }
+    openlog("spice-vdagent", do_daemonize ? LOG_PID : (LOG_PID | LOG_PERROR),
+            LOG_USER);
 
     if (file_test(portdev) != 0) {
-        fprintf(logfile, "Missing virtio device '%s': %s\n",
+        syslog(LOG_ERR, "Missing virtio device '%s': %s",
                 portdev, strerror(errno));
-        retval = 1;
-        goto finish;
+        return 1;
     }
 
     if (do_daemonize)
@@ -222,23 +201,19 @@ int main(int argc, char *argv[])
 
 reconnect:
     if (version_mismatch) {
-        fprintf(logfile, "Version mismatch, restarting\n");
-        if (logfile != stderr)
-            fclose(logfile);
+        syslog(LOG_INFO, "Version mismatch, restarting");
         sleep(1);
         execvp(argv[0], argv);
     }
 
     if (client_setup(do_daemonize)) {
-        retval = 1;
-        goto finish;
+        return 1;
     }
 
-    x11 = vdagent_x11_create(client, logfile, verbose, x11_sync);
+    x11 = vdagent_x11_create(client, debug, x11_sync);
     if (!x11) {
         udscs_destroy_connection(&client);
-        retval = 1;
-        goto finish;
+        return 1;
     }
 
     while (client && !quit) {
@@ -255,15 +230,13 @@ reconnect:
         if (n == -1) {
             if (errno == EINTR)
                 continue;
-            fprintf(logfile, "Fatal error select: %s\n", strerror(errno));
-            retval = 1;
+            syslog(LOG_ERR, "Fatal error select: %s", strerror(errno));
             break;
         }
 
         if (FD_ISSET(x11_fd, &readfds))
             vdagent_x11_do_read(x11);
         udscs_client_handle_fds(&client, &readfds, &writefds);
-        fflush(logfile);
     }
 
     vdagent_x11_destroy(x11);
@@ -271,9 +244,5 @@ reconnect:
     if (!quit)
         goto reconnect;
 
-finish:
-    if (logfile != stderr)
-        fclose(logfile);
-
-    return retval;
+    return 0;
 }

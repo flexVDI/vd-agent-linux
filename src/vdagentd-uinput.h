@@ -1,6 +1,6 @@
 /*  vdagentd-uinput.c vdagentd uinput handling header
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2012 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -30,7 +30,7 @@ struct vdagentd_uinput;
 struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
     int width, int height,
     struct vdagentd_guest_xorg_resolution *screen_info, int screen_count,
-    FILE *errfile, int verbose);
+    int debug);
 void vdagentd_uinput_destroy(struct vdagentd_uinput **uinputp);
 
 void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,

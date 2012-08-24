@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
+#include <syslog.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
@@ -51,7 +52,6 @@ struct agent_data {
 };
 
 /* variables */
-static const char *logfilename = "/var/log/spice-vdagentd/spice-vdagentd.log";
 static const char *pidfilename = "/var/run/spice-vdagentd/spice-vdagentd.pid";
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *uinput_device = "/dev/uinput";
@@ -72,7 +72,6 @@ static unsigned int session_count = 0;
 #endif
 static struct udscs_connection *active_session_conn = NULL;
 static int agent_owns_clipboard[256] = { 0, };
-static FILE *logfile = NULL;
 static int quit = 0;
 static int retval = 0;
 
@@ -87,8 +86,7 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
     size = sizeof(*caps) + VD_AGENT_CAPS_BYTES;
     caps = calloc(1, size);
     if (!caps) {
-        fprintf(logfile,
-                "out of memory allocating capabilities array (write)\n");
+        syslog(LOG_ERR, "out of memory allocating capabilities array (write)");
         return;
     }
 
@@ -115,18 +113,18 @@ static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
     size = sizeof(VDAgentMonitorsConfig) +
            new_monitors->num_of_monitors * sizeof(VDAgentMonConfig);
     if (message_header->size != size) {
-        fprintf(logfile, "invalid message size for VDAgentMonitorsConfig\n");
+        syslog(LOG_ERR, "invalid message size for VDAgentMonitorsConfig");
         return;
     }
 
-    vdagentd_write_xorg_conf(new_monitors, logfile);
+    vdagentd_write_xorg_conf(new_monitors);
 
     if (!mon_config ||
             mon_config->num_of_monitors != new_monitors->num_of_monitors) {
         free(mon_config);
         mon_config = malloc(size);
         if (!mon_config) {
-            fprintf(logfile, "out of memory allocating monitors config\n");
+            syslog(LOG_ERR, "out of memory allocating monitors config");
             return;
         }
     }
@@ -154,8 +152,7 @@ static void do_client_capabilities(struct vdagent_virtio_port *vport,
         free(capabilities);
         capabilities = malloc(capabilities_size * sizeof(uint32_t));
         if (!capabilities) {
-            fprintf(logfile,
-                    "out of memory allocating capabilities array (read)\n");
+            syslog(LOG_ERR, "oom allocating capabilities array (read)");
             capabilities_size = 0;
             return;
         }
@@ -172,9 +169,9 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
     uint8_t selection = VD_AGENT_CLIPBOARD_SELECTION_CLIPBOARD;
 
     if (!active_session_conn) {
-        fprintf(logfile,
-                "Could not find an agent connnection belonging to the "
-                "active session, ignoring client clipboard request\n");
+        syslog(LOG_WARNING,
+               "Could not find an agent connnection belonging to the "
+               "active session, ignoring client clipboard request");
         return;
     }
 
@@ -226,7 +223,7 @@ int virtio_port_read_complete(
     uint32_t min_size = 0;
 
     if (message_header->protocol != VD_AGENT_PROTOCOL) {
-        fprintf(logfile, "message with wrong protocol version ignoring\n");
+        syslog(LOG_ERR, "message with wrong protocol version ignoring");
         return 0;
     }
 
@@ -245,9 +242,9 @@ int virtio_port_read_complete(
                                                 agent_data->height,
                                                 agent_data->screen_info,
                                                 agent_data->screen_count,
-                                                logfile, debug > 1);
+                                                debug > 1);
             if (!uinput) {
-                fprintf(logfile, "Fatal uinput error\n");
+                syslog(LOG_CRIT, "Fatal uinput error");
                 retval = 1;
                 quit = 1;
             }
@@ -287,16 +284,15 @@ int virtio_port_read_complete(
         do_client_clipboard(vport, message_header, data);
         break;
     default:
-        if (debug)
-            fprintf(logfile, "unknown message type %d\n", message_header->type);
-        break;
+        syslog(LOG_WARNING, "unknown message type %d, ignoring",
+               message_header->type);
     }
 
     return 0;
 
 size_error:
-    fprintf(logfile, "read: invalid message size: %u for message type: %u\n",
-                    message_header->size, message_header->type);
+    syslog(LOG_ERR, "read: invalid message size: %u for message type: %u",
+           message_header->size, message_header->type);
     return 0;
 }
 
@@ -313,14 +309,14 @@ int do_agent_clipboard(struct udscs_connection *conn,
 
     /* Check that this agent is from the currently active session */
     if (conn != active_session_conn) {
-        fprintf(logfile, "Clipboard request from agent "
-                         "which is not in the active session?\n");
+        if (debug)
+            syslog(LOG_DEBUG, "%p clipboard req from agent which is not in "
+                              "the active session?", conn);
         goto error;
     }
 
     if (!virtio_port) {
-        fprintf(logfile,
-                "Clipboard request from agent but no client connection\n");
+        syslog(LOG_ERR, "Clipboard req from agent but no client connection");
         goto error;
     }
 
@@ -352,8 +348,8 @@ int do_agent_clipboard(struct udscs_connection *conn,
     }
 
     if (size != header->size) {
-        fprintf(logfile,
-            "unexpected extra data in clipboard msg, disconnecting agent\n");
+        syslog(LOG_ERR,
+               "unexpected extra data in clipboard msg, disconnecting agent");
         return -1;
     }
 
@@ -408,7 +404,7 @@ static void check_xorg_resolution(void)
                                             agent_data->height,
                                             agent_data->screen_info,
                                             agent_data->screen_count,
-                                            logfile, debug > 1);
+                                            debug > 1);
         else
             vdagentd_uinput_update_size(&uinput,
                                         agent_data->width,
@@ -416,20 +412,19 @@ static void check_xorg_resolution(void)
                                         agent_data->screen_info,
                                         agent_data->screen_count);
         if (!uinput) {
-            fprintf(logfile, "Fatal uinput error\n");
+            syslog(LOG_CRIT, "Fatal uinput error");
             retval = 1;
             quit = 1;
             return;
         }
 
         if (!virtio_port) {
-            fprintf(logfile, "opening vdagent virtio channel\n");
+            syslog(LOG_INFO, "opening vdagent virtio channel");
             virtio_port = vdagent_virtio_port_create(portdev,
                                                      virtio_port_read_complete,
-                                                     NULL, logfile);
+                                                     NULL);
             if (!virtio_port) {
-                fprintf(logfile,
-                        "Fatal error opening vdagent virtio channel\n");
+                syslog(LOG_CRIT, "Fatal error opening vdagent virtio channel");
                 retval = 1;
                 quit = 1;
                 return;
@@ -443,7 +438,7 @@ static void check_xorg_resolution(void)
         if (virtio_port) {
             vdagent_virtio_port_flush(&virtio_port);
             vdagent_virtio_port_destroy(&virtio_port);
-            fprintf(logfile, "closed vdagent virtio channel\n");
+            syslog(LOG_INFO, "closed vdagent virtio channel");
         }
     }
 }
@@ -497,6 +492,8 @@ void update_active_session_connection(void)
         return;
 
     active_session_conn = new_conn;
+    if (debug)
+        syslog(LOG_DEBUG, "%p is now the active session", new_conn);
 #endif
 
     release_clipboards();
@@ -511,7 +508,7 @@ void agent_connect(struct udscs_connection *conn)
 
     agent_data = calloc(1, sizeof(*agent_data));
     if (!agent_data) {
-        fprintf(logfile, "Out of memory allocating agent data, disconnecting\n");
+        syslog(LOG_ERR, "Out of memory allocating agent data, disconnecting");
         udscs_destroy_connection(&conn);
         return;
     }
@@ -527,8 +524,8 @@ void agent_connect(struct udscs_connection *conn)
          * connections to the vdagentd and no consolekit since we can't
          * know to which one we should send data
          */
-        fprintf(logfile, "Trying to use multiple vdagent without ConsoleKit support, "
-                "disabling vdagent to avoid potential information leak\n");
+        syslog(LOG_ERR, "Trying to use multiple vdagent without ConsoleKit, "
+               "disabling vdagent to avoid potential information leak");
         active_session_conn = NULL;
     }
 #endif
@@ -578,14 +575,15 @@ void agent_read_complete(struct udscs_connection **connp,
            that stops it from getting the VDAGENTD_VERSION message, and then
            it will never re-exec the new version... */
         if (header->arg1 == 0 && header->arg2 == 0) {
-            fprintf(logfile, "got old session agent xorg resolution message, ignoring\n");
+            syslog(LOG_INFO, "got old session agent xorg resolution message, "
+                             "ignoring");
             free(data);
             return;
         }
 
         if (header->size != n * sizeof(*res)) {
-            fprintf(logfile,
-                    "guest xorg resolution message has wrong size, disconnecting agent\n");
+            syslog(LOG_ERR, "guest xorg resolution message has wrong size, "
+                            "disconnecting agent");
             udscs_destroy_connection(connp);
             free(data);
             return;
@@ -594,7 +592,7 @@ void agent_read_complete(struct udscs_connection **connp,
         free(agent_data->screen_info);
         res = malloc(n * sizeof(*res));
         if (!res) {
-            fprintf(logfile, "out of memory allocating screen info\n");
+            syslog(LOG_ERR, "out of memory allocating screen info");
             n = 0;
         }
         memcpy(res, data, n * sizeof(*res));
@@ -617,8 +615,8 @@ void agent_read_complete(struct udscs_connection **connp,
         }
         break;
     default:
-        fprintf(logfile, "unknown message from vdagent: %u, ignoring\n",
-                header->type);
+        syslog(LOG_ERR, "unknown message from vdagent: %u, ignoring",
+               header->type);
     }
     free(data);
 }
@@ -634,7 +632,7 @@ static void usage(FILE *fp)
             "  -d         log debug messages (use twice for extra info)\n"
             "  -s <port>  set virtio serial port  [%s]\n"
             "  -u <dev>   set uinput device       [%s]\n"
-            "  -x         don't daemonize (and log to logfile)\n",
+            "  -x         don't daemonize\n",
             portdev, uinput_device);
 }
 
@@ -656,12 +654,10 @@ void daemonize(void)
         }
         break;
     case -1:
-        fprintf(logfile, "fork: %s\n", strerror(errno));
+        syslog(LOG_ERR, "fork: %m");
         retval = 1;
     default:
         udscs_destroy_server(server);
-        if (logfile != stderr)
-            fclose(logfile);
         exit(retval);
     }
 }
@@ -691,7 +687,7 @@ void main_loop(void)
         if (n == -1) {
             if (errno == EINTR)
                 continue;
-            fprintf(logfile, "Fatal error select: %s\n", strerror(errno));
+            syslog(LOG_CRIT, "Fatal error select: %m");
             retval = 1;
             break;
         }
@@ -701,15 +697,14 @@ void main_loop(void)
         if (virtio_port) {
             vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
             if (!virtio_port) {
-                fprintf(logfile,
-                        "AIIEEE lost spice client connection, reconnecting\n");
+                syslog(LOG_CRIT,
+                       "AIIEEE lost spice client connection, reconnecting");
                 virtio_port = vdagent_virtio_port_create(portdev,
                                                      virtio_port_read_complete,
-                                                     NULL, logfile);
+                                                     NULL);
             }
             if (!virtio_port) {
-                fprintf(logfile,
-                        "Fatal error opening vdagent virtio channel\n");
+                syslog(LOG_CRIT, "Fatal error opening vdagent virtio channel");
                 retval = 1;
                 break;
             }
@@ -721,7 +716,6 @@ void main_loop(void)
             update_active_session_connection();
         }
 #endif
-        fflush(logfile);
     }
 }
 
@@ -769,34 +763,22 @@ int main(int argc, char *argv[])
     sigaction(SIGTERM, &act, NULL);
     sigaction(SIGQUIT, &act, NULL);
 
-    if (do_daemonize) {
-        logfile = fopen(logfilename, "a");
-        if (!logfile) {
-            fprintf(stderr, "Error opening %s: %s\n", logfilename,
-                    strerror(errno));
-            logfile = stderr;
-        }
-    } else
-        logfile = stderr;
+    openlog("spice-vdagentd", do_daemonize ? 0 : LOG_PERROR, LOG_USER);
 
     /* Setup communication with vdagent process(es) */
     server = udscs_create_server(VDAGENTD_SOCKET, agent_connect,
                                  agent_read_complete, agent_disconnect,
                                  vdagentd_messages, VDAGENTD_NO_MESSAGES,
-                                 debug? logfile:NULL, logfile);
+                                 debug);
     if (!server) {
-        fprintf(logfile, "Fatal could not create server socket %s\n",
-                VDAGENTD_SOCKET);
-        if (logfile != stderr)
-            fclose(logfile);
+        syslog(LOG_CRIT, "Fatal could not create server socket %s",
+               VDAGENTD_SOCKET);
         return 1;
     }
     if (chmod(VDAGENTD_SOCKET, 0666)) {
-        fprintf(logfile, "Fatal could not change permissions on %s: %s\n",
-                VDAGENTD_SOCKET, strerror(errno));
+        syslog(LOG_CRIT, "Fatal could not change permissions on %s: %m",
+               VDAGENTD_SOCKET);
         udscs_destroy_server(server);
-        if (logfile != stderr)
-            fclose(logfile);
         return 1;
     }
 
@@ -805,23 +787,19 @@ int main(int argc, char *argv[])
 
 #ifdef WITH_STATIC_UINPUT
     uinput = vdagentd_uinput_create(uinput_device, 1024, 768, NULL, 0,
-                                    logfile, debug > 1);
+                                    debug > 1);
     if (!uinput) {
         udscs_destroy_server(server);
-        if (logfile != stderr)
-            fclose(logfile);
         return 1;
     }
 #endif
 
 #ifdef HAVE_SESSION_INFO
-    session_info = session_info_create(logfile, debug);
+    session_info = session_info_create(debug);
     if (!session_info) {
-        fprintf(logfile, "Fatal could not get session information\n");
+        syslog(LOG_CRIT, "Fatal could not get session information");
         vdagentd_uinput_destroy(&uinput);
         udscs_destroy_server(server);
-        if (logfile != stderr)
-            fclose(logfile);
         return 1;
     }
 #endif
@@ -838,10 +816,8 @@ int main(int argc, char *argv[])
 #endif
     udscs_destroy_server(server);
     if (unlink(VDAGENTD_SOCKET) != 0)
-        fprintf(logfile, "unlink %s: %s\n", VDAGENTD_SOCKET, strerror(errno));
-    fprintf(logfile, "vdagentd quiting, returning status %d\n", retval);
-    if (logfile != stderr)
-        fclose(logfile);
+        syslog(LOG_ERR, "unlink %s: %s", VDAGENTD_SOCKET, strerror(errno));
+    syslog(LOG_INFO, "vdagentd quiting, returning status %d", retval);
 
     if (do_daemonize)
         unlink(pidfilename);

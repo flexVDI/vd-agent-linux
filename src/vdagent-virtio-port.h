@@ -54,8 +54,7 @@ typedef void (*vdagent_virtio_port_disconnect_callback)(
 /* Create a vdagent virtio port object for port portname */
 struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
     vdagent_virtio_port_read_callback read_callback,
-    vdagent_virtio_port_disconnect_callback disconnect_callback,
-    FILE *errfile);
+    vdagent_virtio_port_disconnect_callback disconnect_callback);
     
 /* The contents of portp will be made NULL */
 void vdagent_virtio_port_destroy(struct vdagent_virtio_port **vportp);
