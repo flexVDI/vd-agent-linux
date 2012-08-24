@@ -38,9 +38,10 @@ gdmautostartdir = $(datadir)/gdm/autostart/LoginWindow
 gdmautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 
 install-data-local:
-	$(mkdir_p) $(DESTDIR)$(localstatedir)/log/spice-vdagentd
 	$(mkdir_p) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
 
+rsyslogdir = $(sysconfdir)/rsyslog.d
+rsyslog_DATA = $(top_srcdir)/data/rsyslog.d/spice-vdagentd.conf
 
 tmpfilesdir = $(prefix)/lib/tmpfiles.d
 tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
