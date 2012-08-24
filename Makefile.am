@@ -42,7 +42,7 @@ install-data-local:
 	$(mkdir_p) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
 
 
-tmpfilesdir = $(sysconfdir)/tmpfiles.d
+tmpfilesdir = $(prefix)/lib/tmpfiles.d
 tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
 
 modulesdir = $(sysconfdir)/modules-load.d
