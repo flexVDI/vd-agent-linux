@@ -56,7 +56,11 @@ endif
 
 if INIT_SCRIPT_SYSTEMD
 systemdunitdir = $(SYSTEMDSYSTEMUNITDIR)
-systemdunit_DATA = $(top_srcdir)/data/spice-vdagentd.service
+systemdunit_DATA = \
+	$(top_srcdir)/data/spice-vdagentd.service \
+	$(top_srcdir)/data/spice-vdagentd.target
+udevrulesdir = /lib/udev/rules.d
+udevrules_DATA = $(top_srcdir)/data/70-spice-vdagentd.rules
 endif
 
 EXTRA_DIST =					\

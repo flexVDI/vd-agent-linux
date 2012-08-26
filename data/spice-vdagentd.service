@@ -5,9 +5,6 @@ After=dbus.target
 # TODO we should use:
 #Requires=spice-vdagentd.socket
 
-# On systems without virtio spice channel, don't start
-ConditionPathExists=/dev/virtio-ports/com.redhat.spice.0
-
 [Service]
 EnvironmentFile=-/etc/sysconfig/spice-vdagentd
 ExecStartPre=/bin/rm -f /var/run/spice-vdagentd/spice-vdagent-sock
@@ -16,4 +13,4 @@ PIDFile=/var/run/spice-vdagentd/spice-vdagentd.pid
 PrivateTmp=true
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=spice-vdagentd.target
