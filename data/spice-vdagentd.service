@@ -6,6 +6,7 @@ After=dbus.target
 #Requires=spice-vdagentd.socket
 
 [Service]
+Type=forking
 EnvironmentFile=-/etc/sysconfig/spice-vdagentd
 ExecStartPre=/bin/rm -f /var/run/spice-vdagentd/spice-vdagent-sock
 ExecStart=/usr/sbin/spice-vdagentd $SPICE_VDAGENTD_EXTRA_ARGS
