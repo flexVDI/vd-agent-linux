@@ -199,7 +199,6 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *n
 {
     int m;
     XRRModeInfo *mode;
-    XRRModeInfo *the_mode;
     XRROutputInfo *output_info;
     XRRCrtcInfo *crtc_info;
     RRCrtc crtc;
@@ -214,16 +213,13 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *n
     crtc_info = crtc_from_id(x11, output_info->crtcs[0]);
     current_mode = crtc_info->mode;
     crtc = output_info->crtc;
-    the_mode = NULL;
     for (m = 0 ; m < x11->randr.res->nmode; ++m) {
         mode = &x11->randr.res->modes[m];
-        if (strcmp(mode->name, name) == 0) {
-            the_mode = mode;
+        if (strcmp(mode->name, name) == 0)
             break;
-        }
     }
-    if (the_mode) {
-        if (crtc && the_mode->id == current_mode) {
+    if (m < x11->randr.res->nmode) {
+        if (crtc && mode->id == current_mode) {
             syslog(LOG_ERR,
                    "delete_mode of in use mode, setting crtc to NULL mode");
             XRRSetCrtcConfig(x11->display, x11->randr.res, crtc,
