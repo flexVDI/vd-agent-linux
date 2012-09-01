@@ -25,6 +25,7 @@ endif
 noinst_HEADERS = src/session-info.h \
                  src/vdagentd-proto-strings.h \
                  src/vdagent-x11.h \
+                 src/vdagent-x11-priv.h \
                  src/udscs.h \
                  src/vdagentd-uinput.h \
                  src/vdagentd-xorg-conf.h \
@@ -65,10 +66,13 @@ endif
 
 EXTRA_DIST =					\
 	README.RHEL-5				\
+	data/70-spice-vdagentd.rules		\
 	data/modules-load.d/spice-vdagentd.conf	\
+	data/rsyslog.d/spice-vdagentd.conf	\
 	data/spice-vdagent.desktop		\
 	data/spice-vdagentd			\
 	data/spice-vdagentd.service		\
+	data/spice-vdagentd.target		\
 	data/tmpfiles.d/spice-vdagentd.conf	\
 	data/xorg.conf.RHEL-5			\
 	$(NULL)
