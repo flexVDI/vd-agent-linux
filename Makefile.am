@@ -44,12 +44,6 @@ install-data-local:
 rsyslogdir = $(sysconfdir)/rsyslog.d
 rsyslog_DATA = $(top_srcdir)/data/rsyslog.d/spice-vdagentd.conf
 
-tmpfilesdir = $(prefix)/lib/tmpfiles.d
-tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
-
-modulesdir = $(sysconfdir)/modules-load.d
-modules_DATA = $(top_srcdir)/data/modules-load.d/spice-vdagentd.conf
-
 if INIT_SCRIPT_RED_HAT
 initdir = $(sysconfdir)/rc.d/init.d
 init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
@@ -60,8 +54,15 @@ systemdunitdir = $(SYSTEMDSYSTEMUNITDIR)
 systemdunit_DATA = \
 	$(top_srcdir)/data/spice-vdagentd.service \
 	$(top_srcdir)/data/spice-vdagentd.target
+
 udevrulesdir = /lib/udev/rules.d
 udevrules_DATA = $(top_srcdir)/data/70-spice-vdagentd.rules
+
+tmpfilesdir = $(prefix)/lib/tmpfiles.d
+tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
+
+modulesdir = $(sysconfdir)/modules-load.d
+modules_DATA = $(top_srcdir)/data/modules-load.d/spice-vdagentd.conf
 endif
 
 EXTRA_DIST =					\
