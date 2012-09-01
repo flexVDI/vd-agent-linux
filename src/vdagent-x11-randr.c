@@ -5,6 +5,7 @@
 #include <X11/extensions/Xinerama.h>
 
 #include "vdagentd-proto.h"
+#include "vdagent-x11.h"
 #include "vdagent-x11-priv.h"
 
 static int caught_error;
@@ -13,6 +14,7 @@ static int (*old_error_handler)(Display *, XErrorEvent *);
 static int error_handler(Display *display, XErrorEvent *error)
 {
     caught_error = 1;
+    return 0;
 }
 
 static void arm_error_handler(struct vdagent_x11 *x11)
@@ -80,7 +82,7 @@ static void free_randr_resources(struct vdagent_x11 *x11)
     x11->randr.crtcs = NULL;
 }
 
-static int update_randr_res(struct vdagent_x11 *x11)
+static void update_randr_res(struct vdagent_x11 *x11)
 {
     int i;
 
@@ -103,7 +105,7 @@ static int update_randr_res(struct vdagent_x11 *x11)
                               &x11->randr.min_height,
                               &x11->randr.max_width,
                               &x11->randr.max_height) != 1) {
-        syslog(LOG_ERR, "RRGetScreenSizeRange failed");
+        syslog(LOG_ERR, "update_randr_res: RRGetScreenSizeRange failed");
     }
 }
 
@@ -113,9 +115,7 @@ void vdagent_x11_randr_init(struct vdagent_x11 *x11)
 
     if (XRRQueryExtension(x11->display, &i, &i)) {
         x11->has_xrandr = 1;
-        if (!update_randr_res(x11)) {
-            syslog(LOG_ERR, "get screen info failed");
-        }
+        update_randr_res(x11);
         XRRQueryVersion(x11->display, &x11->xrandr_major, &x11->xrandr_minor);
     } else {
         x11->randr.res = NULL;
@@ -171,28 +171,6 @@ find_mode_by_size (struct vdagent_x11 *x11, int width, int height)
         }
     }
     return ret;
-}
-
-static int mode_in_use(struct vdagent_x11 *x11, int xid, const char *name)
-{
-    int m;
-    XRRModeInfo *mode;
-    XRROutputInfo *output_info;
-    int crtc;
-
-    output_info = XRRGetOutputInfo(x11->display, x11->randr.res, xid);
-    crtc = output_info->crtc;
-    XRRFreeOutputInfo(output_info);
-    if (!crtc) {
-        return 0;
-    }
-    for (m = 0 ; m < x11->randr.res->nmode; ++m) {
-        mode = &x11->randr.res->modes[m];
-        if (strcmp(mode->name, name) == 0) {
-            return 1;
-        }
-    }
-    return 0;
 }
 
 static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *name)
@@ -329,9 +307,7 @@ static XRRModeInfo *create_new_mode(struct vdagent_x11 *x11, int output_index,
 
     XRRCreateMode (x11->display, x11->root_window, &mode);
     /* silly to update everytime for more then one monitor */
-    if (!update_randr_res(x11)) {
-        syslog(LOG_ERR, "get screen info failed");
-    }
+    update_randr_res(x11);
     return find_mode_by_name(x11, modename);
 }
 
@@ -375,7 +351,7 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     return 1;
 }
 
-static int xrandr_disable_output(struct vdagent_x11 *x11, int output)
+static void xrandr_disable_output(struct vdagent_x11 *x11, int output)
 {
     Status s;
 
@@ -458,17 +434,17 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
     }
 }
 
-static int min_int(int x, int y)
+static uint32_t min_int(uint32_t x, uint32_t y)
 {
     return x > y ? y : x;
 }
 
-static int max_int(int x, int y)
+static uint32_t max_int(uint32_t x, uint32_t y)
 {
     return x > y ? x : y;
 }
 
-int constrain_to_range(int low, int *val, int high)
+int constrain_to_range(uint32_t low, uint32_t *val, uint32_t high)
 {
     if (low <= *val && *val <= high) {
         return 0;
@@ -482,11 +458,11 @@ int constrain_to_range(int low, int *val, int high)
     return 1;
 }
 
-void constrain_to_screen(struct vdagent_x11 *x11, int *w, int *h)
+void constrain_to_screen(struct vdagent_x11 *x11, uint32_t *w, uint32_t *h)
 {
-    int lx, ly, hx, hy;
-    int orig_h = *h;
-    int orig_w = *w;
+    uint32_t lx, ly, hx, hy;
+    uint32_t orig_h = *h;
+    uint32_t orig_w = *w;
 
     lx = x11->randr.min_width;
     hx = x11->randr.max_width;
@@ -516,15 +492,11 @@ void constrain_to_screen(struct vdagent_x11 *x11, int *w, int *h)
  */
 static void zero_base_monitors(struct vdagent_x11 *x11,
                                VDAgentMonitorsConfig *mon_config,
-                               int *width, int *height)
+                               uint32_t *width, uint32_t *height)
 {
     int i = 0;
-    int min_x;
-    int min_y;
-    int max_x;
-    int max_y;
-    int *mon_height;
-    int *mon_width;
+    uint32_t min_x, min_y, max_x, max_y;
+    uint32_t *mon_height, *mon_width;
 
     mon_width = &mon_config->monitors[i].width;
     mon_height = &mon_config->monitors[i].height;
@@ -639,8 +611,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     int i;
     int width, height;
     int x, y;
-    int primary_w, primary_h;
-    Status s;
+    uint32_t primary_w, primary_h;
 
     if (!x11->has_xrandr)
         goto exit;
@@ -690,9 +661,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         check_error_handler(x11);
     }
 
-    if (!update_randr_res(x11)) {
-        syslog(LOG_ERR, "get screen info failed");
-    }
+    update_randr_res(x11);
     x11->width = primary_w;
     x11->height = primary_h;
 

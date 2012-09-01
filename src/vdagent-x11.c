@@ -649,7 +649,7 @@ static Atom vdagent_x11_type_to_target(struct vdagent_x11 *x11,
 
 static void vdagent_x11_handle_conversion_request(struct vdagent_x11 *x11)
 {
-    Atom clip;
+    Atom clip = None;
 
     if (!x11->conversion_req) {
         return;
@@ -667,7 +667,7 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     unsigned char *data = NULL;
     uint32_t type;
     uint8_t selection = -1;
-    Atom clip;
+    Atom clip = None;
 
     if (!x11->conversion_req) {
         syslog(LOG_ERR, "SelectionNotify received without a target");
@@ -1014,7 +1014,7 @@ none:
 void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint8_t selection,
     uint32_t *types, uint32_t type_count)
 {
-    Atom clip;
+    Atom clip = None;
 
     if (vdagent_x11_get_clipboard_atom(x11, selection, &clip)) {
         return;
@@ -1116,7 +1116,7 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint8_t selection,
 void vdagent_x11_clipboard_release(struct vdagent_x11 *x11, uint8_t selection)
 {
     XEvent event;
-    Atom clip;
+    Atom clip = None;
 
     if (vdagent_x11_get_clipboard_atom(x11, selection, &clip)) {
         return;
