@@ -220,7 +220,7 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *n
     }
     if (m < x11->randr.res->nmode) {
         if (crtc && mode->id == current_mode) {
-            syslog(LOG_ERR,
+            syslog(LOG_DEBUG,
                    "delete_mode of in use mode, setting crtc to NULL mode");
             XRRSetCrtcConfig(x11->display, x11->randr.res, crtc,
                              CurrentTime, 0, 0, None, RR_Rotate_0, NULL, 0);
