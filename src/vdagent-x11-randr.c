@@ -173,7 +173,7 @@ find_mode_by_size (struct vdagent_x11 *x11, int width, int height)
     return ret;
 }
 
-static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *name)
+static void delete_mode(struct vdagent_x11 *x11, int output_index)
 {
     int m;
     XRRModeInfo *mode;
@@ -181,6 +181,7 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *n
     XRRCrtcInfo *crtc_info;
     RRCrtc crtc;
     int current_mode = -1;
+    char name[20];
 
     output_info = x11->randr.outputs[output_index];
     if (output_info->ncrtc != 1) {
@@ -191,6 +192,7 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char *n
     crtc_info = crtc_from_id(x11, output_info->crtcs[0]);
     current_mode = crtc_info->mode;
     crtc = output_info->crtc;
+    snprintf(name, sizeof(name), "vdagent-%d", output_index);
     for (m = 0 ; m < x11->randr.res->nmode; ++m) {
         mode = &x11->randr.res->modes[m];
         if (strcmp(mode->name, name) == 0)
@@ -293,7 +295,7 @@ static XRRModeInfo *create_new_mode(struct vdagent_x11 *x11, int output_index,
     /* we may be using this mode from an old invocation - check first */
     snprintf(modename, sizeof(modename), "vdagent-%d", output_index);
     arm_error_handler(x11);
-    delete_mode(x11, output_index, modename);
+    delete_mode(x11, output_index);
     check_error_handler(x11);
     if (x11->set_crtc_config_not_functional) {
         return NULL;
@@ -325,9 +327,8 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
         return 0;
     }
     if (x11->set_crtc_config_not_functional) {
-        /* succeed without doing anything. set_best_mode will
-         * find something close. */
-        return 1;
+        /* fail, set_best_mode will find something close. */
+        return 0;
     }
     xid = x11->randr.res->outputs[output];
     mode = find_mode_by_size(x11, width, height);
@@ -338,14 +339,15 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
         syslog(LOG_ERR, "failed to add a new mode");
         return 0;
     }
-    XRRAddOutputMode(x11->display, xid, mode->id); // Call this anyway?
+    XRRAddOutputMode(x11->display, xid, mode->id);
     outputs[0] = xid;
     s = XRRSetCrtcConfig(x11->display, x11->randr.res, x11->randr.res->crtcs[output],
                          CurrentTime, x, y, mode->id, RR_Rotate_0, outputs,
                          1);
     if (s != RRSetConfigSuccess) {
         syslog(LOG_ERR, "failed to XRRSetCrtcConfig");
-        // TODO - return crtc config to default
+        delete_mode(x11, output);
+        x11->set_crtc_config_not_functional = 1;
         return 0;
     }
     return 1;
@@ -384,6 +386,8 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
         syslog(LOG_ERR, "XRRSizes failed");
         return 0;
     }
+    if (x11->debug)
+        syslog(LOG_DEBUG, "set_screen_to_best_size found %d modes\n", num_sizes);
 
     /* Find the closest size which will fit within the monitor */
     for (i = 0; i < num_sizes; i++) {
@@ -415,6 +419,9 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
                        rotation, CurrentTime);
     XRRFreeScreenConfigInfo(config);
 
+    if (x11->debug)
+        syslog(LOG_DEBUG, "set_screen_to_best_size set size to: %dx%d\n",
+               sizes[best].width, sizes[best].height);
     *out_width = sizes[best].width;
     *out_height = sizes[best].height;
     return 1;
@@ -648,8 +655,10 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         x = mon_config->monitors[i].x;
         y = mon_config->monitors[i].y;
         if (!xrandr_add_and_set(x11, i, x, y, width, height) &&
-            mon_config->num_of_monitors == 1) {
-            set_screen_to_best_size(x11, width, height, &width, &height);
+                mon_config->num_of_monitors == 1) {
+            set_screen_to_best_size(x11, width, height,
+                                    &primary_w, &primary_h);
+            goto update;
         }
     }
 
@@ -661,6 +670,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         check_error_handler(x11);
     }
 
+update:
     update_randr_res(x11);
     x11->width = primary_w;
     x11->height = primary_h;
