@@ -549,10 +549,15 @@ int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *mon)
     }
 
     if (mon->num_of_monitors > res->noutput) {
-        syslog(LOG_ERR,
-               "error: unexpected client request: #mon %d > driver output %d",
-               mon->num_of_monitors, res->noutput);
-        return 0;
+        for (i = res->noutput; i < mon->num_of_monitors; i++) {
+            if (mon->monitors[i].width || mon->monitors[i].height) {
+                syslog(LOG_WARNING,
+                       "warning: unexpected client request: #mon %d > driver output %d",
+                       mon->num_of_monitors, res->noutput);
+                break;
+            }
+        }
+        mon->num_of_monitors = res->noutput;
     }
 
     for (i = 0 ; i < mon->num_of_monitors; ++i) {
