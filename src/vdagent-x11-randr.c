@@ -234,7 +234,7 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index)
     }
 }
 
-void set_reduced_cvt_mode(XRRModeInfo *mode, int width, int height)
+static void set_reduced_cvt_mode(XRRModeInfo *mode, int width, int height)
 {
     /* Code taken from hw/xfree86/modes/xf86cvt.c
      * See that file for lineage. Originated in public domain code
@@ -474,7 +474,7 @@ static uint32_t max_int(uint32_t x, uint32_t y)
     return x > y ? x : y;
 }
 
-int constrain_to_range(uint32_t low, uint32_t *val, uint32_t high)
+static int constrain_to_range(uint32_t low, uint32_t *val, uint32_t high)
 {
     if (low <= *val && *val <= high) {
         return 0;
@@ -488,7 +488,7 @@ int constrain_to_range(uint32_t low, uint32_t *val, uint32_t high)
     return 1;
 }
 
-void constrain_to_screen(struct vdagent_x11 *x11, uint32_t *w, uint32_t *h)
+static void constrain_to_screen(struct vdagent_x11 *x11, uint32_t *w, uint32_t *h)
 {
     uint32_t lx, ly, hx, hy;
     uint32_t orig_h = *h;
@@ -558,7 +558,7 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
     *height = max_y;
 }
 
-int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *mon)
+static int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *mon)
 {
     int i;
     XRRModeInfo *mode;
