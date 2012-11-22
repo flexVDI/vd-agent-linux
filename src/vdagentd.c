@@ -130,9 +130,10 @@ static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
     }
     memcpy(mon_config, new_monitors, size);
 
-    /* Send monitor config to currently connected agents */
-    udscs_server_write_all(server, VDAGENTD_MONITORS_CONFIG, 0, 0,
-                           (uint8_t *)mon_config, size);
+    /* Send monitor config to currently active agent */
+    if (active_session_conn)
+        udscs_write(active_session_conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
+                    (uint8_t *)mon_config, size);
 
     /* Acknowledge reception of monitors config to spice server / client */
     reply.type  = VD_AGENT_MONITORS_CONFIG;
@@ -494,6 +495,10 @@ void update_active_session_connection(void)
     active_session_conn = new_conn;
     if (debug)
         syslog(LOG_DEBUG, "%p is now the active session", new_conn);
+    if (active_session_conn && mon_config)
+        udscs_write(active_session_conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
+                    (uint8_t *)mon_config, sizeof(VDAgentMonitorsConfig) +
+                    mon_config->num_of_monitors * sizeof(VDAgentMonConfig));
 #endif
 
     release_clipboards();
@@ -531,15 +536,9 @@ void agent_connect(struct udscs_connection *conn)
 #endif
 
     udscs_set_user_data(conn, (void *)agent_data);
-    update_active_session_connection();
-
     udscs_write(conn, VDAGENTD_VERSION, 0, 0,
                 (uint8_t *)VERSION, strlen(VERSION) + 1);
-
-    if (mon_config)
-        udscs_write(conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
-                    (uint8_t *)mon_config, sizeof(VDAgentMonitorsConfig) +
-                    mon_config->num_of_monitors * sizeof(VDAgentMonConfig));
+    update_active_session_connection();
 }
 
 void agent_disconnect(struct udscs_connection *conn)
