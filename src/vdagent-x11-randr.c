@@ -47,13 +47,16 @@ static void arm_error_handler(struct vdagent_x11 *x11)
     old_error_handler = XSetErrorHandler(error_handler);
 }
 
-static void check_error_handler(struct vdagent_x11 *x11)
+static int check_error_handler(struct vdagent_x11 *x11)
 {
+    int error;
+
     XSync(x11->display, False);
     XSetErrorHandler(old_error_handler);
-    if (caught_error) {
-        x11->set_crtc_config_not_functional = 1;
-    }
+    error = caught_error;
+    caught_error = 0;
+
+    return error;
 }
 
 static XRRModeInfo *mode_from_id(struct vdagent_x11 *x11, int id)
@@ -196,7 +199,7 @@ find_mode_by_size (struct vdagent_x11 *x11, int width, int height)
     return ret;
 }
 
-static void delete_mode(struct vdagent_x11 *x11, int output_index)
+static void delete_mode(struct vdagent_x11 *x11, int output_index, const char* name)
 {
     int m;
     XRRModeInfo *mode;
@@ -204,7 +207,6 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index)
     XRRCrtcInfo *crtc_info;
     RRCrtc crtc;
     int current_mode = -1;
-    char name[20];
 
     output_info = x11->randr.outputs[output_index];
     if (output_info->ncrtc != 1) {
@@ -215,23 +217,22 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index)
     crtc_info = crtc_from_id(x11, output_info->crtcs[0]);
     current_mode = crtc_info->mode;
     crtc = output_info->crtc;
-    snprintf(name, sizeof(name), "vdagent-%d", output_index);
     for (m = 0 ; m < x11->randr.res->nmode; ++m) {
         mode = &x11->randr.res->modes[m];
         if (strcmp(mode->name, name) == 0)
             break;
     }
     if (m < x11->randr.res->nmode) {
-        if (crtc && mode->id == current_mode) {
-            syslog(LOG_DEBUG,
-                   "delete_mode of in use mode, setting crtc to NULL mode");
-            XRRSetCrtcConfig(x11->display, x11->randr.res, crtc,
-                             CurrentTime, 0, 0, None, RR_Rotate_0, NULL, 0);
-        }
+        arm_error_handler(x11);
         XRRDeleteOutputMode (x11->display, x11->randr.res->outputs[output_index],
                              mode->id);
         XRRDestroyMode (x11->display, mode->id);
+	// ignore race error, if mode is created by others
+	check_error_handler(x11);
     }
+
+    /* silly to update everytime for more then one monitor */
+    update_randr_res(x11);
 }
 
 static void set_reduced_cvt_mode(XRRModeInfo *mode, int width, int height)
@@ -315,24 +316,21 @@ static XRRModeInfo *create_new_mode(struct vdagent_x11 *x11, int output_index,
     char modename[20];
     XRRModeInfo mode;
 
-    /* we may be using this mode from an old invocation - check first */
-    snprintf(modename, sizeof(modename), "vdagent-%d", output_index);
-    arm_error_handler(x11);
-    delete_mode(x11, output_index);
-    check_error_handler(x11);
-    if (x11->set_crtc_config_not_functional) {
-        return NULL;
-    }
+    snprintf(modename, sizeof(modename), "%dx%d-%d", width, height, output_index);
     mode.hSkew = 0;
     mode.name = modename;
     mode.nameLength = strlen(mode.name);
     set_reduced_cvt_mode(&mode, width, height);
     mode.modeFlags = 0;
     mode.id = 0;
-
+    arm_error_handler(x11);
     XRRCreateMode (x11->display, x11->root_window, &mode);
+    // ignore race error, if mode is created by others
+    check_error_handler(x11);
+
     /* silly to update everytime for more then one monitor */
     update_randr_res(x11);
+
     return find_mode_by_name(x11, modename);
 }
 
@@ -343,6 +341,7 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     int xid;
     Status s;
     RROutput outputs[1];
+    char modename[20];
 
     if (!x11->randr.res || output >= x11->randr.res->noutput || output < 0) {
         syslog(LOG_ERR, "%s: program error: missing RANDR or bad output",
@@ -367,12 +366,17 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     s = XRRSetCrtcConfig(x11->display, x11->randr.res, x11->randr.res->crtcs[output],
                          CurrentTime, x, y, mode->id, RR_Rotate_0, outputs,
                          1);
+
     if (s != RRSetConfigSuccess) {
         syslog(LOG_ERR, "failed to XRRSetCrtcConfig");
-        delete_mode(x11, output);
         x11->set_crtc_config_not_functional = 1;
         return 0;
     }
+
+    /* clean the previous name, if any */
+    snprintf(modename, sizeof(modename), "%dx%d-%d", x11->width, x11->height, output);
+    delete_mode(x11, output, modename);
+
     return 1;
 }
 
@@ -695,7 +699,8 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         XRRSetScreenSize(x11->display, x11->root_window, primary_w, primary_h,
                          DisplayWidthMM(x11->display, x11->screen),
                          DisplayHeightMM(x11->display, x11->screen));
-        check_error_handler(x11);
+
+        x11->set_crtc_config_not_functional = check_error_handler(x11);
     }
 
 update:
