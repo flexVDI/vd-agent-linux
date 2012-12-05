@@ -215,9 +215,6 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index,
     int m;
     XRRModeInfo *mode;
     XRROutputInfo *output_info;
-    XRRCrtcInfo *crtc_info;
-    RRCrtc crtc;
-    int current_mode = -1;
     char name[20];
 
     if (width == 0 || height == 0)
@@ -233,9 +230,6 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index,
                "failed to delete mode", output_info->ncrtc);
         return;
     }
-    crtc_info = crtc_from_id(x11, output_info->crtcs[0]);
-    current_mode = crtc_info->mode;
-    crtc = output_info->crtc;
     for (m = 0 ; m < x11->randr.res->nmode; ++m) {
         mode = &x11->randr.res->modes[m];
         if (strcmp(mode->name, name) == 0)
