@@ -477,10 +477,9 @@ void release_clipboards(void)
 
 void update_active_session_connection(void)
 {
-    struct udscs_connection *new_conn = NULL;
-    int n;
-
 #ifdef HAVE_SESSION_INFO
+    int n;
+    struct udscs_connection *new_conn = NULL;
     if (!active_session)
         active_session = session_info_get_active_session(session_info);
 
@@ -508,7 +507,9 @@ void update_active_session_connection(void)
 
 void agent_connect(struct udscs_connection *conn)
 {
+#ifdef HAVE_SESSION_INFO
     uint32_t pid;
+#endif
     struct agent_data *agent_data;
 
     agent_data = calloc(1, sizeof(*agent_data));
@@ -664,7 +665,10 @@ void daemonize(void)
 void main_loop(void)
 {
     fd_set readfds, writefds;
-    int n, nfds, ck_fd = 0;
+    int n, nfds;
+#ifdef HAVE_SESSION_INFO
+    int ck_fd = 0;
+#endif
 
     while (!quit) {
         FD_ZERO(&readfds);
