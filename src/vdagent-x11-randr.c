@@ -193,14 +193,15 @@ find_mode_by_name (struct vdagent_x11 *x11, char *name)
 }
 
 static XRRModeInfo *
-find_mode_by_size (struct vdagent_x11 *x11, int width, int height)
+find_mode_by_size (struct vdagent_x11 *x11, int output, int width, int height)
 {
     int        	m;
     XRRModeInfo        *ret = NULL;
 
-    for (m = 0; m < x11->randr.res->nmode; m++) {
-        XRRModeInfo *mode = &x11->randr.res->modes[m];
-        if (mode->width == width && mode->height == height) {
+    for (m = 0; m < x11->randr.outputs[output]->nmode; m++) {
+        XRRModeInfo *mode = mode_from_id(x11,
+                                         x11->randr.outputs[output]->modes[m]);
+        if (mode && mode->width == width && mode->height == height) {
             ret = mode;
             break;
         }
@@ -372,7 +373,7 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
         return 0;
     }
     xid = x11->randr.res->outputs[output];
-    mode = find_mode_by_size(x11, width, height);
+    mode = find_mode_by_size(x11, output, width, height);
     if (!mode) {
         mode = create_new_mode(x11, output, width, height);
     }
