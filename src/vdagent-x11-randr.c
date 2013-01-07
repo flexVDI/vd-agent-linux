@@ -106,6 +106,7 @@ static void free_randr_resources(struct vdagent_x11 *x11)
     x11->randr.res = NULL;
     x11->randr.outputs = NULL;
     x11->randr.crtcs = NULL;
+    x11->randr.num_monitors = 0;
 }
 
 static void update_randr_res(struct vdagent_x11 *x11)
@@ -120,6 +121,8 @@ static void update_randr_res(struct vdagent_x11 *x11)
     for (i = 0 ; i < x11->randr.res->noutput; ++i) {
         x11->randr.outputs[i] = XRRGetOutputInfo(x11->display, x11->randr.res,
                                                  x11->randr.res->outputs[i]);
+        if (x11->randr.outputs[i]->connection == RR_Connected)
+            x11->randr.num_monitors++;
     }
     for (i = 0 ; i < x11->randr.res->ncrtc; ++i) {
         x11->randr.crtcs[i] = XRRGetCrtcInfo(x11->display, x11->randr.res,
@@ -604,6 +607,9 @@ static int same_monitor_configs(struct vdagent_x11 *x11,
     }
 
     if (x11->width != primary_w || x11->height != primary_h)
+        return 0;
+
+    if (x11->randr.num_monitors != mon->num_of_monitors)
         return 0;
 
     for (i = 0 ; i < mon->num_of_monitors; ++i) {

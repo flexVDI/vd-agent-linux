@@ -111,6 +111,7 @@ struct vdagent_x11 {
         int max_width;
         int min_height;
         int max_height;
+        int num_monitors;
     } randr;
 
     /* NB: we cache this assuming the driver isn't changed under our feet */
