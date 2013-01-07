@@ -76,7 +76,7 @@ AC_ARG_ENABLE([static-uinput],
               [enable_static_uinput="$enableval"],
               [enable_static_uinput="no"])
 
-PKG_CHECK_MODULES(X, [xfixes xrandr xinerama x11])
+PKG_CHECK_MODULES(X, [xfixes xrandr >= 1.3 xinerama x11])
 PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.8.0])
 
 if test "$with_session_info" = "auto" || test "$with_session_info" = "systemd"; then

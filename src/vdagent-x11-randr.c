@@ -109,13 +109,15 @@ static void free_randr_resources(struct vdagent_x11 *x11)
     x11->randr.num_monitors = 0;
 }
 
-static void update_randr_res(struct vdagent_x11 *x11)
+static void update_randr_res(struct vdagent_x11 *x11, int poll)
 {
     int i;
 
     free_randr_resources(x11);
-    /* Note: we don't need XRRGetScreenResourcesCurrent since we cache the changes */
-    x11->randr.res = XRRGetScreenResources(x11->display, x11->root_window);
+    if (poll)
+        x11->randr.res = XRRGetScreenResources(x11->display, x11->root_window);
+    else
+        x11->randr.res = XRRGetScreenResourcesCurrent(x11->display, x11->root_window);
     x11->randr.outputs = malloc(x11->randr.res->noutput * sizeof(*x11->randr.outputs));
     x11->randr.crtcs = malloc(x11->randr.res->ncrtc * sizeof(*x11->randr.crtcs));
     for (i = 0 ; i < x11->randr.res->noutput; ++i) {
@@ -143,9 +145,13 @@ void vdagent_x11_randr_init(struct vdagent_x11 *x11)
     int i;
 
     if (XRRQueryExtension(x11->display, &i, &i)) {
-        x11->has_xrandr = 1;
-        update_randr_res(x11);
         XRRQueryVersion(x11->display, &x11->xrandr_major, &x11->xrandr_minor);
+        if (x11->xrandr_major == 1 && x11->xrandr_minor >= 3)
+            x11->has_xrandr = 1;
+    }
+
+    if (x11->has_xrandr) {
+        update_randr_res(x11, 0);
     } else {
         x11->randr.res = NULL;
     }
@@ -238,7 +244,7 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char* n
     }
 
     /* silly to update everytime for more then one monitor */
-    update_randr_res(x11);
+    update_randr_res(x11, 0);
 }
 
 static void set_reduced_cvt_mode(XRRModeInfo *mode, int width, int height)
@@ -335,7 +341,7 @@ static XRRModeInfo *create_new_mode(struct vdagent_x11 *x11, int output_index,
     check_error_handler(x11);
 
     /* silly to update everytime for more then one monitor */
-    update_randr_res(x11);
+    update_randr_res(x11, 0);
 
     return find_mode_by_name(x11, modename);
 }
@@ -586,7 +592,7 @@ static int same_monitor_configs(struct vdagent_x11 *x11,
     VDAgentMonConfig *client_mode;
     XRRScreenResources *res;
 
-    update_randr_res(x11);
+    update_randr_res(x11, 0);
     res = x11->randr.res;
 
     if (res->noutput > res->ncrtc) {
@@ -734,7 +740,8 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     }
 
 update:
-    update_randr_res(x11);
+    update_randr_res(x11,
+        x11->randr.num_monitors != mon_config->num_of_monitors);
     x11->width = primary_w;
     x11->height = primary_h;
 
