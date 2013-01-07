@@ -672,10 +672,6 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         goto exit;
     }
 
-    if (same_monitor_configs(x11, mon_config)) {
-        goto exit;
-    }
-
     if (x11->debug) {
         dump_monitors_config(x11, mon_config, "from guest");
     }
@@ -683,6 +679,10 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     zero_base_monitors(x11, mon_config, &primary_w, &primary_h);
 
     constrain_to_screen(x11, &primary_w, &primary_h);
+
+    if (same_monitor_configs(x11, mon_config)) {
+        goto exit;
+    }
 
     if (x11->debug) {
         dump_monitors_config(x11, mon_config, "after zeroing");
