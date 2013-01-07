@@ -539,6 +539,8 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
     uint32_t min_x, min_y, max_x, max_y;
     uint32_t *mon_height, *mon_width;
 
+    mon_config->monitors[0].x &= ~7;
+    mon_config->monitors[0].width &= ~7;
     mon_width = &mon_config->monitors[i].width;
     mon_height = &mon_config->monitors[i].height;
     constrain_to_screen(x11, mon_width, mon_height);
@@ -547,6 +549,8 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
     max_x = mon_config->monitors[0].width + min_x;
     max_y = mon_config->monitors[0].height + min_y;
     for (++i ; i < mon_config->num_of_monitors; ++i) {
+        mon_config->monitors[i].x &= ~7;
+        mon_config->monitors[i].width &= ~7;
         mon_width = &mon_config->monitors[i].width;
         mon_height = &mon_config->monitors[i].height;
         constrain_to_screen(x11, mon_width, mon_height);
