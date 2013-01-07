@@ -579,7 +579,10 @@ static int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *
     XRRModeInfo *mode;
     XRRCrtcInfo *crtc;
     VDAgentMonConfig *client_mode;
-    XRRScreenResources *res = x11->randr.res;
+    XRRScreenResources *res;
+
+    update_randr_res(x11);
+    res = x11->randr.res;
 
     if (res->noutput > res->ncrtc) {
         syslog(LOG_ERR, "error: unexpected noutput > ncrtc in driver");
