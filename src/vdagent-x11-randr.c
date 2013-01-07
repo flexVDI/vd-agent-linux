@@ -208,7 +208,8 @@ find_mode_by_size (struct vdagent_x11 *x11, int width, int height)
     return ret;
 }
 
-static void delete_mode(struct vdagent_x11 *x11, int output_index, const char* name)
+static void delete_mode(struct vdagent_x11 *x11, int output_index,
+                        int width, int height)
 {
     int m;
     XRRModeInfo *mode;
@@ -216,7 +217,12 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char* n
     XRRCrtcInfo *crtc_info;
     RRCrtc crtc;
     int current_mode = -1;
+    char name[20];
 
+    if (width == 0 || height == 0)
+        return;
+
+    snprintf(name, sizeof(name), "%dx%d-%d", width, height, output_index);
     if (x11->debug)
         syslog(LOG_DEBUG, "Deleting mode %s", name);
 
@@ -353,7 +359,8 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     int xid;
     Status s;
     RROutput outputs[1];
-    char modename[20];
+    int old_width  = x11->randr.monitor_sizes[output].width;
+    int old_height = x11->randr.monitor_sizes[output].height;
 
     if (!x11->randr.res || output >= x11->randr.res->noutput || output < 0) {
         syslog(LOG_ERR, "%s: program error: missing RANDR or bad output",
@@ -374,6 +381,8 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
         return 0;
     }
     XRRAddOutputMode(x11->display, xid, mode->id);
+    x11->randr.monitor_sizes[output].width = width;
+    x11->randr.monitor_sizes[output].height = height;
     outputs[0] = xid;
     s = XRRSetCrtcConfig(x11->display, x11->randr.res, x11->randr.res->crtcs[output],
                          CurrentTime, x, y, mode->id, RR_Rotate_0, outputs,
@@ -386,8 +395,8 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     }
 
     /* clean the previous name, if any */
-    snprintf(modename, sizeof(modename), "%dx%d-%d", x11->width, x11->height, output);
-    delete_mode(x11, output, modename);
+    if (width != old_width || height != old_height)
+        delete_mode(x11, output, old_width, old_height);
 
     return 1;
 }
@@ -409,6 +418,11 @@ static void xrandr_disable_output(struct vdagent_x11 *x11, int output)
 
     if (s != RRSetConfigSuccess)
         syslog(LOG_ERR, "failed to disable monitor");
+
+    delete_mode(x11, output, x11->randr.monitor_sizes[output].width,
+                             x11->randr.monitor_sizes[output].height);
+    x11->randr.monitor_sizes[output].width  = 0;
+    x11->randr.monitor_sizes[output].height = 0;
 }
 
 static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int height,
@@ -694,6 +708,12 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     if (x11->debug) {
         dump_monitors_config(x11, mon_config, "from guest");
+    }
+
+    if (mon_config->num_of_monitors > MONITOR_SIZE_COUNT) {
+        syslog(LOG_WARNING, "warning: client send %d monitors, capping at %d",
+               mon_config->num_of_monitors, MONITOR_SIZE_COUNT);
+        mon_config->num_of_monitors = MONITOR_SIZE_COUNT;
     }
 
     zero_base_monitors(x11, mon_config, &primary_w, &primary_h);

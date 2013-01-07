@@ -21,6 +21,9 @@
         } \
     } while (0)
 
+/* Same as qxl_dev.h client_monitors_config.heads count */
+#define MONITOR_SIZE_COUNT 64
+
 enum { owner_none, owner_guest, owner_client };
 
 /* X11 terminology is confusing a selection request is a request from an
@@ -52,6 +55,11 @@ struct clipboard_format_info {
     uint32_t type;
     Atom atoms[16];
     int atom_count;
+};
+
+struct monitor_size {
+    int width;
+    int height;
 };
 
 static const struct clipboard_format_tmpl clipboard_format_templates[] = {
@@ -112,6 +120,7 @@ struct vdagent_x11 {
         int min_height;
         int max_height;
         int num_monitors;
+        struct monitor_size monitor_sizes[MONITOR_SIZE_COUNT];
     } randr;
 
     /* NB: we cache this assuming the driver isn't changed under our feet */
