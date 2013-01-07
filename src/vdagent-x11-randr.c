@@ -573,7 +573,9 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
     *height = max_y;
 }
 
-static int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *mon)
+static int same_monitor_configs(struct vdagent_x11 *x11,
+                                VDAgentMonitorsConfig *mon,
+                                uint32_t primary_w, uint32_t primary_h)
 {
     int i;
     XRRModeInfo *mode;
@@ -600,6 +602,9 @@ static int same_monitor_configs(struct vdagent_x11 *x11, VDAgentMonitorsConfig *
         }
         mon->num_of_monitors = res->noutput;
     }
+
+    if (x11->width != primary_w || x11->height != primary_h)
+        return 0;
 
     for (i = 0 ; i < mon->num_of_monitors; ++i) {
         if (x11->randr.outputs[i]->ncrtc == 0) {
@@ -683,7 +688,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     constrain_to_screen(x11, &primary_w, &primary_h);
 
-    if (same_monitor_configs(x11, mon_config)) {
+    if (same_monitor_configs(x11, mon_config, primary_w, primary_h)) {
         goto exit;
     }
 
