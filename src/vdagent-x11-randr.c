@@ -208,6 +208,9 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index, const char* n
     RRCrtc crtc;
     int current_mode = -1;
 
+    if (x11->debug)
+        syslog(LOG_DEBUG, "Deleting mode %s", name);
+
     output_info = x11->randr.outputs[output_index];
     if (output_info->ncrtc != 1) {
         syslog(LOG_ERR, "output has %d crtcs, expected exactly 1, "
@@ -461,6 +464,10 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
         return;
     }
 
+    if (x11->debug)
+        syslog(LOG_DEBUG, "Root size changed to %dx%d send %d",
+               width, height, !x11->dont_send_guest_xorg_res);
+
     x11->width  = width;
     x11->height = height;
     if (!x11->dont_send_guest_xorg_res) {
@@ -695,12 +702,17 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     }
 
     if (primary_w != x11->width || primary_h != x11->height) {
+        if (x11->debug)
+            syslog(LOG_DEBUG, "Changing screen size to %dx%d",
+                   primary_w, primary_h);
         arm_error_handler(x11);
         XRRSetScreenSize(x11->display, x11->root_window, primary_w, primary_h,
                          DisplayWidthMM(x11->display, x11->screen),
                          DisplayHeightMM(x11->display, x11->screen));
-
-        x11->set_crtc_config_not_functional = check_error_handler(x11);
+        if (check_error_handler(x11)) {
+            syslog(LOG_ERR, "failed to XRRSetScreenSize");
+            x11->set_crtc_config_not_functional = 1;
+        }
     }
 
 update:
