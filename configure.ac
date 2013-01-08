@@ -125,6 +125,21 @@ if test x"$enable_static_uinput" = "xyes" ; then
     AC_DEFINE([WITH_STATIC_UINPUT], [1], [If defined, vdagentd will use a static uinput device] )
 fi
 
+# If no CFLAGS are set, set some sane default CFLAGS
+if test "$ac_test_CFLAGS" != set; then
+  DEFAULT_CFLAGS="-Wall -Werror -Wp,-D_FORTIFY_SOURCE=2 -fstack-protector --param=ssp-buffer-size=4"
+  for F in $DEFAULT_CFLAGS; do
+    AC_MSG_CHECKING([whether $CC supports $F])
+    save_CFLAGS="$CFLAGS"
+    CFLAGS="$CFLAGS $F"
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE([ ])], [cc_flag=yes], [cc_flag=no])
+    if test "x$cc_flag" != "xyes"; then
+      CFLAGS="$save_CFLAGS"
+    fi
+    AC_MSG_RESULT([$cc_flag])
+  done
+fi
+
 AC_CONFIG_FILES([
 Makefile
 ])
