@@ -493,17 +493,17 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
     }
 }
 
-static uint32_t min_int(uint32_t x, uint32_t y)
+static int min_int(int x, int y)
 {
     return x > y ? y : x;
 }
 
-static uint32_t max_int(uint32_t x, uint32_t y)
+static int max_int(int x, int y)
 {
     return x > y ? x : y;
 }
 
-static int constrain_to_range(uint32_t low, uint32_t *val, uint32_t high)
+static int constrain_to_range(int low, int *val, int high)
 {
     if (low <= *val && *val <= high) {
         return 0;
@@ -517,11 +517,11 @@ static int constrain_to_range(uint32_t low, uint32_t *val, uint32_t high)
     return 1;
 }
 
-static void constrain_to_screen(struct vdagent_x11 *x11, uint32_t *w, uint32_t *h)
+static void constrain_to_screen(struct vdagent_x11 *x11, int *w, int *h)
 {
-    uint32_t lx, ly, hx, hy;
-    uint32_t orig_h = *h;
-    uint32_t orig_w = *w;
+    int lx, ly, hx, hy;
+    int orig_h = *h;
+    int orig_w = *w;
 
     lx = x11->randr.min_width;
     hx = x11->randr.max_width;
@@ -551,16 +551,16 @@ static void constrain_to_screen(struct vdagent_x11 *x11, uint32_t *w, uint32_t *
  */
 static void zero_base_monitors(struct vdagent_x11 *x11,
                                VDAgentMonitorsConfig *mon_config,
-                               uint32_t *width, uint32_t *height)
+                               int *width, int *height)
 {
     int i = 0;
-    uint32_t min_x, min_y, max_x, max_y;
-    uint32_t *mon_height, *mon_width;
+    int min_x, min_y, max_x, max_y;
+    int *mon_height, *mon_width;
 
     mon_config->monitors[0].x &= ~7;
     mon_config->monitors[0].width &= ~7;
-    mon_width = &mon_config->monitors[i].width;
-    mon_height = &mon_config->monitors[i].height;
+    mon_width = (int *)&mon_config->monitors[i].width;
+    mon_height = (int *)&mon_config->monitors[i].height;
     constrain_to_screen(x11, mon_width, mon_height);
     min_x = mon_config->monitors[0].x;
     min_y = mon_config->monitors[0].y;
@@ -569,8 +569,8 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
     for (++i ; i < mon_config->num_of_monitors; ++i) {
         mon_config->monitors[i].x &= ~7;
         mon_config->monitors[i].width &= ~7;
-        mon_width = &mon_config->monitors[i].width;
-        mon_height = &mon_config->monitors[i].height;
+        mon_width = (int *)&mon_config->monitors[i].width;
+        mon_height = (int *)&mon_config->monitors[i].height;
         constrain_to_screen(x11, mon_width, mon_height);
         min_x = min_int(mon_config->monitors[i].x, min_x);
         min_y = min_int(mon_config->monitors[i].y, min_y);
@@ -593,7 +593,7 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
 
 static int same_monitor_configs(struct vdagent_x11 *x11,
                                 VDAgentMonitorsConfig *mon,
-                                uint32_t primary_w, uint32_t primary_h)
+                                int primary_w, int primary_h)
 {
     int i;
     XRRModeInfo *mode;
@@ -690,7 +690,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     int i;
     int width, height;
     int x, y;
-    uint32_t primary_w, primary_h;
+    int primary_w, primary_h;
 
     if (!x11->has_xrandr)
         goto exit;
