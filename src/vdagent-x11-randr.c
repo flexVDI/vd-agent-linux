@@ -24,6 +24,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include <X11/extensions/Xinerama.h>
 
@@ -537,6 +538,11 @@ static void constrain_to_screen(struct vdagent_x11 *x11, int *w, int *h)
     }
 }
 
+static int monitor_enabled(VDAgentMonConfig *mon)
+{
+    return mon->width != 0 && mon->height != 0;
+}
+
 /*
  * The agent config doesn't contain a primary size, just the monitors, but
  * we need to total size as well, to make sure we have enough memory and
@@ -553,20 +559,12 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
                                VDAgentMonitorsConfig *mon_config,
                                int *width, int *height)
 {
-    int i = 0;
-    int min_x, min_y, max_x, max_y;
+    int i, min_x = INT_MAX, min_y = INT_MAX, max_x = INT_MIN, max_y = INT_MIN;
     int *mon_height, *mon_width;
 
-    mon_config->monitors[0].x &= ~7;
-    mon_config->monitors[0].width &= ~7;
-    mon_width = (int *)&mon_config->monitors[i].width;
-    mon_height = (int *)&mon_config->monitors[i].height;
-    constrain_to_screen(x11, mon_width, mon_height);
-    min_x = mon_config->monitors[0].x;
-    min_y = mon_config->monitors[0].y;
-    max_x = mon_config->monitors[0].width + min_x;
-    max_y = mon_config->monitors[0].height + min_y;
-    for (++i ; i < mon_config->num_of_monitors; ++i) {
+    for (i = 0; i < mon_config->num_of_monitors; i++) {
+        if (!monitor_enabled(&mon_config->monitors[i]))
+            continue;
         mon_config->monitors[i].x &= ~7;
         mon_config->monitors[i].width &= ~7;
         mon_width = (int *)&mon_config->monitors[i].width;
@@ -581,6 +579,8 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
         syslog(LOG_ERR, "%s: agent config %d,%d rooted, adjusting to 0,0.",
                __FUNCTION__, min_x, min_y);
         for (i = 0 ; i < mon_config->num_of_monitors; ++i) {
+            if (!monitor_enabled(&mon_config->monitors[i]))
+                continue;
             mon_config->monitors[i].x -= min_x;
             mon_config->monitors[i].y -= min_y;
         }
@@ -589,6 +589,17 @@ static void zero_base_monitors(struct vdagent_x11 *x11,
     max_y -= min_y;
     *width = max_x;
     *height = max_y;
+}
+
+static int enabled_monitors(VDAgentMonitorsConfig *mon)
+{
+    int i, enabled = 0;
+
+    for (i = 0; i < mon->num_of_monitors; i++) {
+        if (monitor_enabled(&mon->monitors[i]))
+            enabled++;
+    }
+    return enabled;
 }
 
 static int same_monitor_configs(struct vdagent_x11 *x11,
@@ -611,7 +622,7 @@ static int same_monitor_configs(struct vdagent_x11 *x11,
 
     if (mon->num_of_monitors > res->noutput) {
         for (i = res->noutput; i < mon->num_of_monitors; i++) {
-            if (mon->monitors[i].width || mon->monitors[i].height) {
+            if (monitor_enabled(&mon->monitors[i])) {
                 syslog(LOG_WARNING,
                        "warning: unexpected client request: #mon %d > driver output %d",
                        mon->num_of_monitors, res->noutput);
@@ -624,10 +635,16 @@ static int same_monitor_configs(struct vdagent_x11 *x11,
     if (x11->width != primary_w || x11->height != primary_h)
         return 0;
 
-    if (x11->randr.num_monitors != mon->num_of_monitors)
+    if (x11->randr.num_monitors != enabled_monitors(mon))
         return 0;
 
     for (i = 0 ; i < mon->num_of_monitors; ++i) {
+        if (!monitor_enabled(&mon->monitors[i])) {
+            if (x11->randr.outputs[i]->ncrtc != 0) {
+                return 0;
+            }
+            continue;
+        }
         if (x11->randr.outputs[i]->ncrtc == 0) {
             return 0;
         }
@@ -669,6 +686,8 @@ static void dump_monitors_config(struct vdagent_x11 *x11,
            mon_config->flags);
     for (i = 0 ; i < mon_config->num_of_monitors; ++i) {
         m = &mon_config->monitors[i];
+        if (!monitor_enabled(m))
+            continue;
         syslog(LOG_DEBUG, "received monitor %d config %dx%d+%d+%d", i,
                m->width, m->height, m->x, m->y);
     }
@@ -727,13 +746,17 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         xrandr_disable_output(x11, i);
 
     for (i = 0; i < mon_config->num_of_monitors; ++i) {
+        if (!monitor_enabled(&mon_config->monitors[i])) {
+            xrandr_disable_output(x11, i);
+            continue;
+        }
         /* Try to create the requested resolution */
         width = mon_config->monitors[i].width;
         height = mon_config->monitors[i].height;
         x = mon_config->monitors[i].x;
         y = mon_config->monitors[i].y;
         if (!xrandr_add_and_set(x11, i, x, y, width, height) &&
-                mon_config->num_of_monitors == 1) {
+                enabled_monitors(mon_config) == 1) {
             set_screen_to_best_size(x11, width, height,
                                     &primary_w, &primary_h);
             goto update;
@@ -756,7 +779,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
 update:
     update_randr_res(x11,
-        x11->randr.num_monitors != mon_config->num_of_monitors);
+        x11->randr.num_monitors != enabled_monitors(mon_config));
     x11->width = primary_w;
     x11->height = primary_h;
 

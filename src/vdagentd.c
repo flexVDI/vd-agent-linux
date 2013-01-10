@@ -96,6 +96,7 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_REPLY);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_SELECTION);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_SPARSE_MONITORS_CONFIG);
 
     vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
