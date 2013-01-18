@@ -30,7 +30,7 @@ struct vdagent_x11;
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int debug, int sync);
-void vdagent_x11_destroy(struct vdagent_x11 *x11);
+void vdagent_x11_destroy(struct vdagent_x11 *x11, int vdagentd_disconnected);
 
 int  vdagent_x11_get_fd(struct vdagent_x11 *x11);
 void vdagent_x11_do_read(struct vdagent_x11 *x11);

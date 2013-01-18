@@ -169,12 +169,15 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     return x11;
 }
 
-void vdagent_x11_destroy(struct vdagent_x11 *x11)
+void vdagent_x11_destroy(struct vdagent_x11 *x11, int vdagentd_disconnected)
 {
     uint8_t sel;
 
     if (!x11)
         return;
+
+    if (vdagentd_disconnected)
+        x11->vdagentd = NULL;
 
     for (sel = 0; sel < VD_AGENT_CLIPBOARD_SELECTION_SECONDARY; ++sel) {
         vdagent_x11_set_clipboard_owner(x11, sel, owner_none);
@@ -254,8 +257,9 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
                           "ownership change, clearing");
                 once = 0;
             }
-            udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, selection,
-                        VD_AGENT_CLIPBOARD_NONE, NULL, 0);
+            if (x11->vdagentd)
+                udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_DATA, selection,
+                            VD_AGENT_CLIPBOARD_NONE, NULL, 0);
             if (curr_conv == x11->conversion_req) {
                 x11->conversion_req = next_conv;
                 x11->clipboard_data_size = 0;
@@ -272,7 +276,7 @@ static void vdagent_x11_set_clipboard_owner(struct vdagent_x11 *x11,
     if (new_owner == owner_none) {
         /* When going from owner_guest to owner_none we need to send a
            clipboard release message to the client */
-        if (x11->clipboard_owner[selection] == owner_guest) {
+        if (x11->clipboard_owner[selection] == owner_guest && x11->vdagentd) {
             udscs_write(x11->vdagentd, VDAGENTD_CLIPBOARD_RELEASE, selection,
                         0, NULL, 0);
         }
