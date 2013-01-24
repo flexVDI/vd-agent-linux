@@ -120,9 +120,6 @@ void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf)
     } while ((dev = pci_device_next(it)));
 
     if (i < monitor_conf->num_of_monitors) {
-        syslog(LOG_WARNING,
-               "Client has %d monitors, but only %d qxl devices found",
-               monitor_conf->num_of_monitors, i);
         FPRINTF("# Client has %d monitors, but only %d qxl devices found\n",
                 monitor_conf->num_of_monitors, i);
         FPRINTF("# Only generation %d \"Screen\" sections\n\n", i);
