@@ -52,7 +52,7 @@ void daemon_read_complete(struct udscs_connection **connp,
 {
     switch (header->type) {
     case VDAGENTD_MONITORS_CONFIG:
-        vdagent_x11_set_monitor_config(x11, (VDAgentMonitorsConfig *)data);
+        vdagent_x11_set_monitor_config(x11, (VDAgentMonitorsConfig *)data, 0);
         free(data);
         break;
     case VDAGENTD_CLIPBOARD_REQUEST:

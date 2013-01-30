@@ -696,7 +696,8 @@ static void dump_monitors_config(struct vdagent_x11 *x11,
  *  invalid configuration request from client.
  */
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
-                                    VDAgentMonitorsConfig *mon_config)
+                                    VDAgentMonitorsConfig *mon_config,
+                                    int fallback)
 {
     int width, height;
     int x, y;
@@ -780,8 +781,13 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                          DisplayWidthMM(x11->display, x11->screen),
                          DisplayHeightMM(x11->display, x11->screen));
         if (check_error_handler(x11)) {
-            syslog(LOG_ERR, "failed to XRRSetScreenSize");
-            x11->set_crtc_config_not_functional = 1;
+            syslog(LOG_ERR, "XRRSetScreenSize failed, not enough mem?");
+            if (!fallback && curr) {
+                syslog(LOG_WARNING, "Restoring previous config");
+                vdagent_x11_set_monitor_config(x11, curr, 1);
+                free(curr);
+                return;
+            }
         }
     }
 
