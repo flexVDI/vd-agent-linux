@@ -34,11 +34,22 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
+#include <glib.h>
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
 #include "vdagentd-proto-strings.h"
 #include "vdagent-x11.h"
+
+typedef struct AgentFileXferTask {
+    uint32_t                       id;
+    int                            file_fd;
+    uint64_t                       read_bytes;
+    char                           *file_name;
+    uint64_t                       file_size;
+} AgentFileXferTask;
+
+GHashTable *agent_file_xfer_tasks = NULL;
 
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static int debug = 0;
@@ -46,6 +57,154 @@ static struct vdagent_x11 *x11 = NULL;
 static struct udscs_connection *client = NULL;
 static int quit = 0;
 static int version_mismatch = 0;
+
+static void agent_file_xfer_task_free(gpointer data)
+{
+    AgentFileXferTask *task = data;
+
+    g_return_if_fail(task != NULL);
+
+    if (task->file_fd > 0) {
+        close(task->file_fd);
+    }
+    g_free(task->file_name);
+    g_free(task);
+}
+
+/* Parse start messag then create a new file xfer task */
+static AgentFileXferTask *vdagent_parse_start_msg(
+    VDAgentFileXferStartMessage *msg)
+{
+    GKeyFile *keyfile = NULL;
+    AgentFileXferTask *task = NULL;
+    GError *error = NULL;
+
+    keyfile = g_key_file_new();
+    if (g_key_file_load_from_data(keyfile,
+                                  (const gchar *)msg->data,
+                                  -1,
+                                  G_KEY_FILE_NONE, &error) == FALSE) {
+        syslog(LOG_ERR, "failed to load keyfile from data, error:%s\n",
+               error->message);
+        goto error;
+    }
+    task = g_new0(AgentFileXferTask, 1);
+    task->id = msg->id;
+    task->file_name = g_key_file_get_string(
+        keyfile, "vdagent-file-xfer", "name", &error);
+    if (error) {
+        syslog(LOG_ERR, "failed to parse filename, error:%s\n", error->message);
+        goto error;
+    }
+    task->file_size = g_key_file_get_uint64(
+        keyfile, "vdagent-file-xfer", "size", &error);
+    if (error) {
+        syslog(LOG_ERR, "failed to parse filesize, error:%s\n", error->message);
+        goto error;
+    }
+
+    g_key_file_free(keyfile);
+    return task;
+
+error:
+    g_clear_error(&error);
+    agent_file_xfer_task_free(task);
+    if (keyfile) {
+        g_key_file_free(keyfile);
+    }
+    return NULL;
+}
+
+static void vdagent_file_xfer_start(VDAgentFileXferStartMessage *msg)
+{
+    AgentFileXferTask *new;
+    char *file_path;
+    const gchar *desktop;
+
+    new = vdagent_parse_start_msg(msg);
+    if (new == NULL) {
+        goto error;
+    }
+
+    desktop = g_get_user_special_dir(G_USER_DIRECTORY_DESKTOP);
+    if (desktop == NULL) {
+        goto error;
+    }
+    file_path = g_build_filename(desktop, new->file_name, NULL);
+    new->file_fd = open(file_path, O_CREAT | O_WRONLY, 0644);
+    g_free(file_path);
+    if (new->file_fd == -1) {
+        syslog(LOG_ERR, "Create file error:%s\n", strerror(errno));
+        goto error;
+    }
+
+    if (ftruncate(new->file_fd, new->file_size) < 0) {
+        goto error;
+    }
+
+    g_hash_table_insert(agent_file_xfer_tasks, GINT_TO_POINTER(msg->id), new);
+
+    udscs_write(client, VDAGENTD_FILE_XFER_STATUS,
+                msg->id, VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA, NULL, 0);
+    return ;
+
+error:
+    udscs_write(client, VDAGENTD_FILE_XFER_STATUS,
+                msg->id, VD_AGENT_FILE_XFER_STATUS_ERROR, NULL, 0);
+    agent_file_xfer_task_free(new);
+}
+
+static void vdagent_file_xfer_status(VDAgentFileXferStatusMessage *msg)
+{
+    syslog(LOG_INFO, "task %d received response %d", msg->id, msg->result);
+
+    if (msg->result == VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA) {
+        /* Do nothing */
+    } else {
+        /* Error, remove this task */
+        gboolean found;
+        found = g_hash_table_remove(agent_file_xfer_tasks, GINT_TO_POINTER(msg->id));
+        if (found) {
+            syslog(LOG_DEBUG, "remove task %d", msg->id);
+        } else {
+            syslog(LOG_ERR, "can not find task %d", msg->id);
+        }
+    }
+}
+
+static void vdagent_file_xfer_data(VDAgentFileXferDataMessage *msg)
+{
+    AgentFileXferTask *task;
+    int len;
+
+    task = g_hash_table_lookup(agent_file_xfer_tasks, GINT_TO_POINTER(msg->id));
+    if (task == NULL) {
+        syslog(LOG_INFO, "Can not find task:%d", msg->id);
+        return ;
+    }
+
+    len = write(task->file_fd, msg->data, msg->size);
+    if (len == -1) {
+        syslog(LOG_ERR, "write file error:%s\n", strerror(errno));
+        /* TODO: close, cancel dnd */
+        return ;
+    }
+
+    task->read_bytes += msg->size;
+    if (task->read_bytes >= task->file_size) {
+        gboolean found;
+        if (task->read_bytes > task->file_size) {
+            syslog(LOG_ERR, "error: received too much data");
+        }
+        syslog(LOG_DEBUG, "task %d have been finished", task->id);
+        found = g_hash_table_remove(agent_file_xfer_tasks, GINT_TO_POINTER(msg->id));
+        if (found) {
+            syslog(LOG_DEBUG, "remove task %d", msg->id);
+        } else {
+            syslog(LOG_ERR, "can not find task %d", msg->id);
+        }
+    }
+}
 
 void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, uint8_t *data)
@@ -81,6 +240,18 @@ void daemon_read_complete(struct udscs_connection **connp,
             udscs_destroy_connection(connp);
             version_mismatch = 1;
         }
+        break;
+    case VDAGENTD_FILE_XFER_START:
+        vdagent_file_xfer_start((VDAgentFileXferStartMessage *)data);
+        free(data);
+        break;
+    case VDAGENTD_FILE_XFER_STATUS:
+        vdagent_file_xfer_status((VDAgentFileXferStatusMessage *)data);
+        free(data);
+        break;
+    case VDAGENTD_FILE_XFER_DATA:
+        vdagent_file_xfer_data((VDAgentFileXferDataMessage *)data);
+        free(data);
         break;
     default:
         syslog(LOG_ERR, "Unknown message from vdagentd type: %d, ignoring",
@@ -198,6 +369,8 @@ int main(int argc, char *argv[])
 
     if (do_daemonize)
         daemonize();
+
+    agent_file_xfer_tasks = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, agent_file_xfer_task_free);
 
 reconnect:
     if (version_mismatch) {

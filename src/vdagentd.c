@@ -216,6 +216,34 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
                 data, size);
 }
 
+static void do_client_file_xfer(struct vdagent_virtio_port *vport,
+                                VDAgentMessage *message_header,
+                                uint8_t *data)
+{
+    uint32_t msg_type;
+
+    if (!active_session_conn) {
+        syslog(LOG_WARNING,
+               "Could not find an agent connnection belonging to the "
+               "active session, ignoring client clipboard request");
+        return;
+    }
+
+    switch (message_header->type) {
+    case VD_AGENT_FILE_XFER_START:
+        msg_type = VDAGENTD_FILE_XFER_START;
+        break;
+    case VD_AGENT_FILE_XFER_STATUS:
+        msg_type = VDAGENTD_FILE_XFER_STATUS;
+        break;
+    case VD_AGENT_FILE_XFER_DATA:
+        msg_type = VDAGENTD_FILE_XFER_DATA;
+        break;
+    }
+
+    udscs_write(active_session_conn, msg_type, 0, 0, data, message_header->size);
+}
+
 int virtio_port_read_complete(
         struct vdagent_virtio_port *vport,
         int port_nr,
@@ -284,6 +312,11 @@ int virtio_port_read_complete(
             goto size_error;
         }
         do_client_clipboard(vport, message_header, data);
+        break;
+    case VD_AGENT_FILE_XFER_START:
+    case VD_AGENT_FILE_XFER_STATUS:
+    case VD_AGENT_FILE_XFER_DATA:
+        do_client_file_xfer(vport, message_header, data);
         break;
     default:
         syslog(LOG_WARNING, "unknown message type %d, ignoring",
@@ -615,6 +648,16 @@ void agent_read_complete(struct udscs_connection **connp,
             return;
         }
         break;
+    case VDAGENTD_FILE_XFER_STATUS:{
+        VDAgentFileXferStatusMessage status;
+        status.id = header->arg1;
+        status.result = header->arg2;
+        vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                  VD_AGENT_FILE_XFER_STATUS, 0,
+                                  (uint8_t *)&status, sizeof(status));
+        break;
+    }
+
     default:
         syslog(LOG_ERR, "unknown message from vdagent: %u, ignoring",
                header->type);
