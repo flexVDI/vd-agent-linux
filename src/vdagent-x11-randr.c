@@ -602,36 +602,18 @@ static int enabled_monitors(VDAgentMonitorsConfig *mon)
     return enabled;
 }
 
-static int same_monitor_configs(struct vdagent_x11 *x11,
-                                VDAgentMonitorsConfig *curr,
-                                VDAgentMonitorsConfig *mon,
-                                int primary_w, int primary_h)
+static int same_monitor_configs(VDAgentMonitorsConfig *conf1,
+                                VDAgentMonitorsConfig *conf2)
 {
-    XRRScreenResources *res = x11->randr.res;
-    int i, real_num_of_monitors = 0;
+    int i;
 
-    for (i = 0; i < mon->num_of_monitors; i++) {
-        if (monitor_enabled(&mon->monitors[i]))
-            real_num_of_monitors = i + 1;
-    }
-    mon->num_of_monitors = real_num_of_monitors;
-
-    if (mon->num_of_monitors > res->noutput) {
-        syslog(LOG_WARNING,
-               "warning unexpected client request: #mon %d > driver output %d",
-               mon->num_of_monitors, res->noutput);
-        mon->num_of_monitors = res->noutput;
-    }
-
-    if (x11->width != primary_w || x11->height != primary_h)
+    if (conf1 == NULL || conf2 == NULL ||
+            conf1->num_of_monitors != conf2->num_of_monitors)
         return 0;
 
-    if (curr == NULL || mon->num_of_monitors != curr->num_of_monitors)
-        return 0;
-
-    for (i = 0; i < mon->num_of_monitors; i++) {
-        VDAgentMonConfig *mon1 = &mon->monitors[i];
-        VDAgentMonConfig *mon2 = &curr->monitors[i];
+    for (i = 0; i < conf1->num_of_monitors; i++) {
+        VDAgentMonConfig *mon1 = &conf1->monitors[i];
+        VDAgentMonConfig *mon2 = &conf2->monitors[i];
         /* NOTE: we don't compare depth. */
         if (mon1->x != mon2->x || mon1->y != mon2->y ||
                mon1->width != mon2->width || mon1->height != mon2->height)
@@ -645,11 +627,8 @@ static VDAgentMonitorsConfig *get_current_mon_config(struct vdagent_x11 *x11)
     int i, num_of_monitors = 0;
     XRRModeInfo *mode;
     XRRCrtcInfo *crtc;
-    XRRScreenResources *res;
+    XRRScreenResources *res = x11->randr.res;
     VDAgentMonitorsConfig *mon_config;
-
-    update_randr_res(x11, 0);
-    res = x11->randr.res;
 
     mon_config = calloc(1, sizeof(VDAgentMonitorsConfig) +
                            res->noutput * sizeof(VDAgentMonConfig));
@@ -719,10 +698,10 @@ static void dump_monitors_config(struct vdagent_x11 *x11,
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                                     VDAgentMonitorsConfig *mon_config)
 {
-    int i;
     int width, height;
     int x, y;
     int primary_w, primary_h;
+    int i, real_num_of_monitors = 0;
     VDAgentMonitorsConfig *curr = NULL;
 
     if (!x11->has_xrandr)
@@ -736,6 +715,20 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     if (x11->debug) {
         dump_monitors_config(x11, mon_config, "from guest");
+    }
+
+    for (i = 0; i < mon_config->num_of_monitors; i++) {
+        if (monitor_enabled(&mon_config->monitors[i]))
+            real_num_of_monitors = i + 1;
+    }
+    mon_config->num_of_monitors = real_num_of_monitors;
+
+    update_randr_res(x11, 0);
+    if (mon_config->num_of_monitors > x11->randr.res->noutput) {
+        syslog(LOG_WARNING,
+               "warning unexpected client request: #mon %d > driver output %d",
+               mon_config->num_of_monitors, x11->randr.res->noutput);
+        mon_config->num_of_monitors = x11->randr.res->noutput;
     }
 
     if (mon_config->num_of_monitors > MONITOR_SIZE_COUNT) {
@@ -753,7 +746,8 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     }
 
     curr = get_current_mon_config(x11);
-    if (same_monitor_configs(x11, curr, mon_config, primary_w, primary_h)) {
+    if (same_monitor_configs(mon_config, curr) &&
+           x11->width == primary_w && x11->height == primary_h) {
         goto exit;
     }
 
