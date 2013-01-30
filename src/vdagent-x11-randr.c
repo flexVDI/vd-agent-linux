@@ -603,76 +603,89 @@ static int enabled_monitors(VDAgentMonitorsConfig *mon)
 }
 
 static int same_monitor_configs(struct vdagent_x11 *x11,
+                                VDAgentMonitorsConfig *curr,
                                 VDAgentMonitorsConfig *mon,
                                 int primary_w, int primary_h)
 {
-    int i;
-    XRRModeInfo *mode;
-    XRRCrtcInfo *crtc;
-    VDAgentMonConfig *client_mode;
-    XRRScreenResources *res;
+    XRRScreenResources *res = x11->randr.res;
+    int i, real_num_of_monitors = 0;
 
-    update_randr_res(x11, 0);
-    res = x11->randr.res;
-
-    if (res->noutput > res->ncrtc) {
-        syslog(LOG_ERR, "error: unexpected noutput > ncrtc in driver");
-        return 0;
+    for (i = 0; i < mon->num_of_monitors; i++) {
+        if (monitor_enabled(&mon->monitors[i]))
+            real_num_of_monitors = i + 1;
     }
+    mon->num_of_monitors = real_num_of_monitors;
 
     if (mon->num_of_monitors > res->noutput) {
-        for (i = res->noutput; i < mon->num_of_monitors; i++) {
-            if (monitor_enabled(&mon->monitors[i])) {
-                syslog(LOG_WARNING,
-                       "warning: unexpected client request: #mon %d > driver output %d",
-                       mon->num_of_monitors, res->noutput);
-                break;
-            }
-        }
+        syslog(LOG_WARNING,
+               "warning unexpected client request: #mon %d > driver output %d",
+               mon->num_of_monitors, res->noutput);
         mon->num_of_monitors = res->noutput;
     }
 
     if (x11->width != primary_w || x11->height != primary_h)
         return 0;
 
-    if (x11->randr.num_monitors != enabled_monitors(mon))
+    if (curr == NULL || mon->num_of_monitors != curr->num_of_monitors)
         return 0;
 
-    for (i = 0 ; i < mon->num_of_monitors; ++i) {
-        if (!monitor_enabled(&mon->monitors[i])) {
-            if (x11->randr.outputs[i]->ncrtc != 0) {
-                return 0;
-            }
-            continue;
-        }
-        if (x11->randr.outputs[i]->ncrtc == 0) {
-            return 0;
-        }
-        if (x11->randr.outputs[i]->ncrtc != 1) {
-            syslog(LOG_ERR, "error: unexpected driver config, ncrtc %d != 1",
-                   x11->randr.outputs[i]->ncrtc);
-            return 0;
-        }
-        crtc = crtc_from_id(x11, x11->randr.outputs[i]->crtcs[0]);
-        if (!crtc) {
-            syslog(LOG_ERR, "error: inconsistent or stale data from X");
-            return 0;
-        }
-        client_mode = &mon->monitors[i];
-        mode = mode_from_id(x11, crtc->mode);
-        if (!mode) {
-            return 0;
-        }
+    for (i = 0; i < mon->num_of_monitors; i++) {
+        VDAgentMonConfig *mon1 = &mon->monitors[i];
+        VDAgentMonConfig *mon2 = &curr->monitors[i];
         /* NOTE: we don't compare depth. */
-        /* NOTE 2: width set by X is a multiple of 8, so ignore lower 3 bits */
-        if ((mode->width & ~7) != (client_mode->width & ~7) ||
-            mode->height != client_mode->height ||
-            (crtc->x & ~7) != (client_mode->x & ~7) ||
-            crtc->y != client_mode->y) {
+        if (mon1->x != mon2->x || mon1->y != mon2->y ||
+               mon1->width != mon2->width || mon1->height != mon2->height)
             return 0;
-        }
     }
     return 1;
+}
+
+static VDAgentMonitorsConfig *get_current_mon_config(struct vdagent_x11 *x11)
+{
+    int i, num_of_monitors = 0;
+    XRRModeInfo *mode;
+    XRRCrtcInfo *crtc;
+    XRRScreenResources *res;
+    VDAgentMonitorsConfig *mon_config;
+
+    update_randr_res(x11, 0);
+    res = x11->randr.res;
+
+    mon_config = calloc(1, sizeof(VDAgentMonitorsConfig) +
+                           res->noutput * sizeof(VDAgentMonConfig));
+    if (!mon_config) {
+        syslog(LOG_ERR, "out of memory allocating current monitor config");
+        return NULL;
+    }
+
+    for (i = 0 ; i < res->noutput; i++) {
+        if (x11->randr.outputs[i]->ncrtc == 0)
+            continue; /* Monitor disabled, already zero-ed by calloc */
+        if (x11->randr.outputs[i]->ncrtc != 1)
+            goto error;
+
+        crtc = crtc_from_id(x11, x11->randr.outputs[i]->crtcs[0]);
+        if (!crtc)
+            goto error;
+
+        mode = mode_from_id(x11, crtc->mode);
+        if (!mode)
+            continue; /* Monitor disabled, already zero-ed by calloc */
+
+        mon_config->monitors[i].x      = crtc->x;
+        mon_config->monitors[i].y      = crtc->y;
+        mon_config->monitors[i].width  = mode->width;
+        mon_config->monitors[i].height = mode->height;
+        num_of_monitors = i + 1;
+    }
+    mon_config->num_of_monitors = num_of_monitors;
+    mon_config->flags = VD_AGENT_CONFIG_MONITORS_FLAG_USE_POS;
+    return mon_config;
+
+error:
+    syslog(LOG_ERR, "error: inconsistent or stale data from X");
+    free(mon_config);
+    return NULL;
 }
 
 static void dump_monitors_config(struct vdagent_x11 *x11,
@@ -710,6 +723,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     int width, height;
     int x, y;
     int primary_w, primary_h;
+    VDAgentMonitorsConfig *curr = NULL;
 
     if (!x11->has_xrandr)
         goto exit;
@@ -734,12 +748,13 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     constrain_to_screen(x11, &primary_w, &primary_h);
 
-    if (same_monitor_configs(x11, mon_config, primary_w, primary_h)) {
-        goto exit;
-    }
-
     if (x11->debug) {
         dump_monitors_config(x11, mon_config, "after zeroing");
+    }
+
+    curr = get_current_mon_config(x11);
+    if (same_monitor_configs(x11, curr, mon_config, primary_w, primary_h)) {
+        goto exit;
     }
 
     for (i = mon_config->num_of_monitors; i < x11->randr.res->noutput; i++)
@@ -793,6 +808,7 @@ exit:
 
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);
+    free(curr);
 }
 
 void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
