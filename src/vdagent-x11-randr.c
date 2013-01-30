@@ -707,9 +707,8 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     if (!x11->has_xrandr)
         goto exit;
 
-    if (mon_config->num_of_monitors < 1) {
-        syslog(LOG_ERR, "client sent invalid monitor config number %d",
-               mon_config->num_of_monitors);
+    if (enabled_monitors(mon_config) < 1) {
+        syslog(LOG_ERR, "client sent config with all monitors disabled");
         goto exit;
     }
 
