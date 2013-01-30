@@ -622,6 +622,12 @@ static int same_monitor_configs(VDAgentMonitorsConfig *conf1,
     return 1;
 }
 
+static int config_size(int num_of_monitors)
+{
+    return sizeof(VDAgentMonitorsConfig) +
+                           num_of_monitors * sizeof(VDAgentMonConfig);
+}
+
 static VDAgentMonitorsConfig *get_current_mon_config(struct vdagent_x11 *x11)
 {
     int i, num_of_monitors = 0;
@@ -630,8 +636,7 @@ static VDAgentMonitorsConfig *get_current_mon_config(struct vdagent_x11 *x11)
     XRRScreenResources *res = x11->randr.res;
     VDAgentMonitorsConfig *mon_config;
 
-    mon_config = calloc(1, sizeof(VDAgentMonitorsConfig) +
-                           res->noutput * sizeof(VDAgentMonConfig));
+    mon_config = calloc(1, config_size(res->noutput));
     if (!mon_config) {
         syslog(LOG_ERR, "out of memory allocating current monitor config");
         return NULL;
