@@ -121,6 +121,7 @@ struct vdagent_x11 {
         int max_height;
         int num_monitors;
         struct monitor_size monitor_sizes[MONITOR_SIZE_COUNT];
+        VDAgentMonitorsConfig *failed_conf;
     } randr;
 
     /* NB: we cache this assuming the driver isn't changed under our feet */

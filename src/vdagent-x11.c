@@ -184,6 +184,7 @@ void vdagent_x11_destroy(struct vdagent_x11 *x11, int vdagentd_disconnected)
     }
 
     XCloseDisplay(x11->display);
+    free(x11->randr.failed_conf);
     free(x11);
 }
 

@@ -756,6 +756,11 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         goto exit;
     }
 
+    if (same_monitor_configs(mon_config, x11->randr.failed_conf)) {
+        syslog(LOG_WARNING, "Ignoring previous failed client monitor config");
+        goto exit;
+    }
+
     for (i = mon_config->num_of_monitors; i < x11->randr.res->noutput; i++)
         xrandr_disable_output(x11, i);
 
@@ -791,6 +796,14 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                 syslog(LOG_WARNING, "Restoring previous config");
                 vdagent_x11_set_monitor_config(x11, curr, 1);
                 free(curr);
+                /* Remember this config failed, if the client is maximized or
+                   fullscreen it will keep sending the failing config. */
+                free(x11->randr.failed_conf);
+                x11->randr.failed_conf =
+                    malloc(config_size(mon_config->num_of_monitors));
+                if (x11->randr.failed_conf)
+                    memcpy(x11->randr.failed_conf, mon_config,
+                           config_size(mon_config->num_of_monitors));
                 return;
             }
         }
