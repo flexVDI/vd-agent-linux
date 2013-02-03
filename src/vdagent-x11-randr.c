@@ -831,27 +831,21 @@ exit:
 void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
 {
     struct vdagentd_guest_xorg_resolution *res = NULL;
-    XineramaScreenInfo *screen_info = NULL;
     int i, screen_count = 0;
 
     if (x11->has_xinerama) {
+        XineramaScreenInfo *screen_info = NULL;
+
         /* Xinerama reports the same information RANDR reports, so stay
          * with Xinerama for support of Xinerama only setups */
         screen_info = XineramaQueryScreens(x11->display, &screen_count);
-    }
-
-    if (screen_count == 0)
-        screen_count = 1;
-
-    res = malloc(screen_count * sizeof(*res));
-    if (!res) {
-        syslog(LOG_ERR, "out of memory while trying to send resolutions, not sending resolutions.");
-        if (screen_info)
+        if (!screen_info)
+            goto no_info;
+        res = malloc(screen_count * sizeof(*res));
+        if (!res) {
             XFree(screen_info);
-        return;
-    }
-
-    if (screen_info) {
+            goto no_mem;
+        }
         for (i = 0; i < screen_count; i++) {
             if (screen_info[i].screen_number >= screen_count) {
                 syslog(LOG_ERR, "Invalid screen number in xinerama screen info (%d >= %d)",
@@ -867,13 +861,27 @@ void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
         }
         XFree(screen_info);
     } else {
+no_info:
+        screen_count = 1;
+        res = malloc(screen_count * sizeof(*res));
+        if (!res)
+            goto no_mem;
         res[0].width  = x11->width;
         res[0].height = x11->height;
         res[0].x = 0;
         res[0].y = 0;
     }
 
+    if (x11->debug) {
+        for (i = 0; i < screen_count; i++)
+            syslog(LOG_DEBUG, "Screen %d %dx%d%+d%+d", i, res[i].width,
+                   res[i].height, res[i].x, res[i].y);
+    }
+
     udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width,
                 x11->height, (uint8_t *)res, screen_count * sizeof(*res));
     free(res);
+    return;
+no_mem:
+    syslog(LOG_ERR, "out of memory while trying to send resolutions, not sending resolutions.");
 }
