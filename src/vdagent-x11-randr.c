@@ -490,7 +490,7 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
     x11->width  = width;
     x11->height = height;
     if (!x11->dont_send_guest_xorg_res) {
-        vdagent_x11_send_daemon_guest_xorg_res(x11);
+        vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
     }
 }
 
@@ -821,23 +821,45 @@ update:
     x11->dont_send_guest_xorg_res = 0;
 
 exit:
-    vdagent_x11_send_daemon_guest_xorg_res(x11);
+    vdagent_x11_send_daemon_guest_xorg_res(x11, 0);
 
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);
     free(curr);
 }
 
-void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11)
+void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11, int update)
 {
     struct vdagentd_guest_xorg_resolution *res = NULL;
     int i, screen_count = 0;
 
-    if (x11->has_xinerama) {
+    if (x11->has_xrandr) {
+        VDAgentMonitorsConfig *curr;
+
+        if (update)
+            update_randr_res(x11, 0);
+
+        curr = get_current_mon_config(x11);
+        if (!curr)
+            goto no_info;
+
+        screen_count = curr->num_of_monitors;
+        res = malloc(screen_count * sizeof(*res));
+        if (!res) {
+            free(curr);
+            goto no_mem;
+        }
+
+        for (i = 0; i < screen_count; i++) {
+            res[i].width  = curr->monitors[i].width;
+            res[i].height = curr->monitors[i].height;
+            res[i].x = curr->monitors[i].x;
+            res[i].y = curr->monitors[i].y;
+        }
+        free(curr);
+    } else if (x11->has_xinerama) {
         XineramaScreenInfo *screen_info = NULL;
 
-        /* Xinerama reports the same information RANDR reports, so stay
-         * with Xinerama for support of Xinerama only setups */
         screen_info = XineramaQueryScreens(x11->display, &screen_count);
         if (!screen_info)
             goto no_info;

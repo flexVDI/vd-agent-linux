@@ -161,7 +161,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     XGetWindowAttributes(x11->display, x11->root_window, &attrib);
     x11->width = attrib.width;
     x11->height = attrib.height;
-    vdagent_x11_send_daemon_guest_xorg_res(x11);
+    vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
 
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);

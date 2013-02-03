@@ -135,7 +135,8 @@ struct vdagent_x11 {
 };
 
 void vdagent_x11_randr_init(struct vdagent_x11 *x11);
-void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11);
+void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11,
+                                            int update);
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
                                                int width, int height);
 
