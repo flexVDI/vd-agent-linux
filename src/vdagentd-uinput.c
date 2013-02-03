@@ -94,7 +94,14 @@ void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
         .absmax  [ ABS_Y ] = height - 1,
 #endif
     };
-    int rc;
+    int i, rc;
+
+    if (uinput->debug) {
+        syslog(LOG_DEBUG, "uinput-update-size: %dx%d", width, height);
+        for (i = 0; i < screen_count; i++)
+            syslog(LOG_DEBUG, "screen %d: +%d+%d", i, screen_info[i].x,
+                   screen_info[i].y);
+    }
 
     uinput->screen_info  = screen_info;
     uinput->screen_count = screen_count;
@@ -192,6 +199,9 @@ void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,
                    mouse->display_id, uinput->screen_count);
             return;
         }
+        if (uinput->debug)
+            syslog(LOG_DEBUG, "mouse-event: mon %d %dx%d", mouse->display_id,
+                   mouse->x, mouse->y);
         mouse->x += uinput->screen_info[mouse->display_id].x;
         mouse->y += uinput->screen_info[mouse->display_id].y;
 #ifdef WITH_STATIC_UINPUT
