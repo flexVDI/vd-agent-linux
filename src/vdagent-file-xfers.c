@@ -160,6 +160,12 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     struct stat st;
     int i;
 
+    if (g_hash_table_lookup(xfers->xfers, GUINT_TO_POINTER(msg->id))) {
+        syslog(LOG_ERR, "file-xfer: error id %u already exists, ignoring!",
+               msg->id);
+        return;
+    }
+
     task = vdagent_parse_start_msg(msg);
     if (task == NULL) {
         goto error;
