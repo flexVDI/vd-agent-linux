@@ -153,39 +153,39 @@ error:
 void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     VDAgentFileXferStartMessage *msg)
 {
-    AgentFileXferTask *new;
+    AgentFileXferTask *task;
     char *file_path = NULL;
     const gchar *desktop;
 
-    new = vdagent_parse_start_msg(msg);
-    if (new == NULL) {
+    task = vdagent_parse_start_msg(msg);
+    if (task == NULL) {
         goto error;
     }
 
-    new->debug = xfers->debug;
+    task->debug = xfers->debug;
     desktop = g_get_user_special_dir(G_USER_DIRECTORY_DESKTOP);
     if (desktop == NULL) {
         goto error;
     }
-    file_path = g_build_filename(desktop, new->file_name, NULL);
-    new->file_fd = open(file_path, O_CREAT | O_WRONLY, 0644);
-    if (new->file_fd == -1) {
+    file_path = g_build_filename(desktop, task->file_name, NULL);
+    task->file_fd = open(file_path, O_CREAT | O_WRONLY, 0644);
+    if (task->file_fd == -1) {
         syslog(LOG_ERR, "file-xfer: failed to create file %s: %s",
                file_path, strerror(errno));
         goto error;
     }
 
-    if (ftruncate(new->file_fd, new->file_size) < 0) {
+    if (ftruncate(task->file_fd, task->file_size) < 0) {
         syslog(LOG_ERR, "file-xfer: err reserving %"PRIu64" bytes for %s: %s",
-               new->file_size, file_path, strerror(errno));
+               task->file_size, file_path, strerror(errno));
         goto error;
     }
 
-    g_hash_table_insert(xfers->xfers, GINT_TO_POINTER(msg->id), new);
+    g_hash_table_insert(xfers->xfers, GINT_TO_POINTER(msg->id), task);
 
     if (xfers->debug)
         syslog(LOG_DEBUG, "file-xfer: Adding task %u %s %"PRIu64" bytes",
-               new->id, file_path, new->file_size);
+               task->id, file_path, task->file_size);
 
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA, NULL, 0);
@@ -195,8 +195,8 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
 error:
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_ERROR, NULL, 0);
-    if (new)
-        vdagent_file_xfer_task_free(new);
+    if (task)
+        vdagent_file_xfer_task_free(task);
     g_free(file_path);
 }
 
