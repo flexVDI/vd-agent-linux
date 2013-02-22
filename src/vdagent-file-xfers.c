@@ -60,10 +60,11 @@ static void vdagent_file_xfer_task_free(gpointer data)
     g_return_if_fail(task != NULL);
 
     if (task->file_fd > 0) {
+        syslog(LOG_ERR, "file-xfer: Removing task %u and file %s due to error",
+               task->id, task->file_name);
         close(task->file_fd);
-    }
-
-    if (task->debug)
+        unlink(task->file_name);
+    } else if (task->debug)
         syslog(LOG_DEBUG, "file-xfer: Removing task %u %s",
                task->id, task->file_name);
 
@@ -239,12 +240,14 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
 
     task->read_bytes += msg->size;
     if (task->read_bytes >= task->file_size) {
-        if (task->read_bytes > task->file_size) {
+        if (task->read_bytes == task->file_size) {
+            if (xfers->debug)
+                syslog(LOG_DEBUG, "file-xfer: task %u %s has completed",
+                       task->id, task->file_name);
+            close(task->file_fd);
+            task->file_fd = -1;
+        } else
             syslog(LOG_ERR, "file-xfer: error received too much data");
-        }
-        if (xfers->debug)
-            syslog(LOG_DEBUG, "file-xfer: task %u %s has completed",
-                   task->id, task->file_name);
         g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
     }
 }
