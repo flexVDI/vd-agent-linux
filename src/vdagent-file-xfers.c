@@ -41,6 +41,7 @@
 struct vdagent_file_xfers {
     GHashTable *xfers;
     struct udscs_connection *vdagentd;
+    int debug;
 };
 
 typedef struct AgentFileXferTask {
@@ -49,6 +50,7 @@ typedef struct AgentFileXferTask {
     uint64_t                       read_bytes;
     char                           *file_name;
     uint64_t                       file_size;
+    int                            debug;
 } AgentFileXferTask;
 
 static void vdagent_file_xfer_task_free(gpointer data)
@@ -60,12 +62,17 @@ static void vdagent_file_xfer_task_free(gpointer data)
     if (task->file_fd > 0) {
         close(task->file_fd);
     }
+
+    if (task->debug)
+        syslog(LOG_DEBUG, "file-xfer: Removing task %u %s",
+               task->id, task->file_name);
+
     g_free(task->file_name);
     g_free(task);
 }
 
 struct vdagent_file_xfers *vdagent_file_xfers_create(
-    struct udscs_connection *vdagentd)
+    struct udscs_connection *vdagentd, int debug)
 {
     struct vdagent_file_xfers *xfers;
 
@@ -73,6 +80,7 @@ struct vdagent_file_xfers *vdagent_file_xfers_create(
     xfers->xfers = g_hash_table_new_full(g_direct_hash, g_direct_equal,
                                          NULL, vdagent_file_xfer_task_free);
     xfers->vdagentd = vdagentd;
+    xfers->debug = debug;
 
     return xfers;
 }
@@ -81,6 +89,18 @@ void vdagent_file_xfers_destroy(struct vdagent_file_xfers *xfers)
 {
     g_hash_table_destroy(xfers->xfers);
     g_free(xfers);
+}
+
+AgentFileXferTask *vdagent_file_xfers_get_task(
+    struct vdagent_file_xfers *xfers, uint32_t id)
+{
+    AgentFileXferTask *task;
+
+    task = g_hash_table_lookup(xfers->xfers, GUINT_TO_POINTER(id));
+    if (task == NULL)
+        syslog(LOG_ERR, "file-xfer: error can not find task %u", id);
+
+    return task;
 }
 
 /* Parse start message then create a new file xfer task */
@@ -122,10 +142,10 @@ static AgentFileXferTask *vdagent_parse_start_msg(
 
 error:
     g_clear_error(&error);
-    vdagent_file_xfer_task_free(task);
-    if (keyfile) {
+    if (task)
+        vdagent_file_xfer_task_free(task);
+    if (keyfile)
         g_key_file_free(keyfile);
-    }
     return NULL;
 }
 
@@ -141,6 +161,7 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
         goto error;
     }
 
+    new->debug = xfers->debug;
     desktop = g_get_user_special_dir(G_USER_DIRECTORY_DESKTOP);
     if (desktop == NULL) {
         goto error;
@@ -161,6 +182,10 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
 
     g_hash_table_insert(xfers->xfers, GINT_TO_POINTER(msg->id), new);
 
+    if (xfers->debug)
+        syslog(LOG_DEBUG, "file-xfer: Adding task %u %s %"PRIu64" bytes",
+               new->id, file_path, new->file_size);
+
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA, NULL, 0);
     g_free(file_path);
@@ -169,27 +194,28 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
 error:
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_ERROR, NULL, 0);
-    vdagent_file_xfer_task_free(new);
+    if (new)
+        vdagent_file_xfer_task_free(new);
     g_free(file_path);
 }
 
 void vdagent_file_xfers_status(struct vdagent_file_xfers *xfers,
     VDAgentFileXferStatusMessage *msg)
 {
-    syslog(LOG_INFO, "file-xfer: task %d received response %d",
-           msg->id, msg->result);
+    AgentFileXferTask *task;
 
-    if (msg->result == VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA) {
-        /* Do nothing */
-    } else {
-        /* Error, remove this task */
-        gboolean found;
-        found = g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
-        if (found) {
-            syslog(LOG_DEBUG, "file-xfer: remove task %d", msg->id);
-        } else {
-            syslog(LOG_ERR, "file-xfer: can not find task %d", msg->id);
-        }
+    task = vdagent_file_xfers_get_task(xfers, msg->id);
+    if (!task)
+        return;
+
+    switch (msg->result) {
+    case VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA:
+        syslog(LOG_ERR, "file-xfer: task %u %s received unexpected 0 response",
+               task->id, task->file_name);
+        break;
+    default:
+        /* Cancel or Error, remove this task */
+        g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
     }
 }
 
@@ -199,11 +225,9 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
     AgentFileXferTask *task;
     int len;
 
-    task = g_hash_table_lookup(xfers->xfers, GINT_TO_POINTER(msg->id));
-    if (task == NULL) {
-        syslog(LOG_INFO, "file-xfer: can not find task %d", msg->id);
-        return ;
-    }
+    task = vdagent_file_xfers_get_task(xfers, msg->id);
+    if (!task)
+        return;
 
     len = write(task->file_fd, msg->data, msg->size);
     if (len == -1) {
@@ -215,16 +239,12 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
 
     task->read_bytes += msg->size;
     if (task->read_bytes >= task->file_size) {
-        gboolean found;
         if (task->read_bytes > task->file_size) {
             syslog(LOG_ERR, "file-xfer: error received too much data");
         }
-        syslog(LOG_DEBUG, "file-xfer: task %d has completed", task->id);
-        found = g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
-        if (found) {
-            syslog(LOG_DEBUG, "file-xfer: remove task %d", msg->id);
-        } else {
-            syslog(LOG_ERR, "file-xfer: can not find task %d", msg->id);
-        }
+        if (xfers->debug)
+            syslog(LOG_DEBUG, "file-xfer: task %u %s has completed",
+                   task->id, task->file_name);
+        g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
     }
 }

@@ -233,7 +233,7 @@ reconnect:
         return 1;
     }
 
-    vdagent_file_xfers = vdagent_file_xfers_create(client);
+    vdagent_file_xfers = vdagent_file_xfers_create(client, debug);
 
     while (client && !quit) {
         FD_ZERO(&readfds);
