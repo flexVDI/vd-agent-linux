@@ -32,6 +32,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <spice/vd_agent.h>
 #include <glib.h>
 
@@ -154,8 +155,10 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     VDAgentFileXferStartMessage *msg)
 {
     AgentFileXferTask *task;
-    char *file_path = NULL;
+    char *path = NULL, *file_path = NULL;
     const gchar *desktop;
+    struct stat st;
+    int i;
 
     task = vdagent_parse_start_msg(msg);
     if (task == NULL) {
@@ -167,17 +170,30 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     if (desktop == NULL) {
         goto error;
     }
+
     file_path = g_build_filename(desktop, task->file_name, NULL);
-    task->file_fd = open(file_path, O_CREAT | O_WRONLY, 0644);
+    path = g_strdup(file_path);
+    for (i = 0; i < 64 && (stat(path, &st) == 0 || errno != ENOENT); i++) {
+        g_free(path);
+        path = g_strdup_printf("%s (%d)", file_path, i + 1);
+    }
+    g_free(file_path);
+    if (i == 64) {
+        syslog(LOG_ERR, "file-xfer: more then 63 copies of %s exist?",
+               task->file_name);
+        goto error;
+    }
+
+    task->file_fd = open(path, O_CREAT | O_WRONLY, 0644);
     if (task->file_fd == -1) {
         syslog(LOG_ERR, "file-xfer: failed to create file %s: %s",
-               file_path, strerror(errno));
+               path, strerror(errno));
         goto error;
     }
 
     if (ftruncate(task->file_fd, task->file_size) < 0) {
         syslog(LOG_ERR, "file-xfer: err reserving %"PRIu64" bytes for %s: %s",
-               task->file_size, file_path, strerror(errno));
+               task->file_size, path, strerror(errno));
         goto error;
     }
 
@@ -185,11 +201,11 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
 
     if (xfers->debug)
         syslog(LOG_DEBUG, "file-xfer: Adding task %u %s %"PRIu64" bytes",
-               task->id, file_path, task->file_size);
+               task->id, path, task->file_size);
 
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA, NULL, 0);
-    g_free(file_path);
+    g_free(path);
     return ;
 
 error:
@@ -197,7 +213,7 @@ error:
                 msg->id, VD_AGENT_FILE_XFER_STATUS_ERROR, NULL, 0);
     if (task)
         vdagent_file_xfer_task_free(task);
-    g_free(file_path);
+    g_free(path);
 }
 
 void vdagent_file_xfers_status(struct vdagent_file_xfers *xfers,
