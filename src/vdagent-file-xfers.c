@@ -181,7 +181,7 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
         goto error;
     }
 
-    g_hash_table_insert(xfers->xfers, GINT_TO_POINTER(msg->id), task);
+    g_hash_table_insert(xfers->xfers, GUINT_TO_POINTER(msg->id), task);
 
     if (xfers->debug)
         syslog(LOG_DEBUG, "file-xfer: Adding task %u %s %"PRIu64" bytes",
@@ -216,7 +216,7 @@ void vdagent_file_xfers_status(struct vdagent_file_xfers *xfers,
         break;
     default:
         /* Cancel or Error, remove this task */
-        g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
+        g_hash_table_remove(xfers->xfers, GUINT_TO_POINTER(msg->id));
     }
 }
 
@@ -248,6 +248,6 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
             task->file_fd = -1;
         } else
             syslog(LOG_ERR, "file-xfer: error received too much data");
-        g_hash_table_remove(xfers->xfers, GINT_TO_POINTER(msg->id));
+        g_hash_table_remove(xfers->xfers, GUINT_TO_POINTER(msg->id));
     }
 }
