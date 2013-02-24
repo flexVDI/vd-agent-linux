@@ -155,7 +155,7 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     VDAgentFileXferStartMessage *msg)
 {
     AgentFileXferTask *task;
-    char *path = NULL, *file_path = NULL;
+    char *dir = NULL, *path = NULL, *file_path = NULL;
     const gchar *desktop;
     struct stat st;
     int i;
@@ -176,14 +176,19 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     if (desktop == NULL) {
         goto error;
     }
-
     file_path = g_build_filename(desktop, task->file_name, NULL);
+
+    dir = g_path_get_dirname(file_path);
+    if (g_mkdir_with_parents(dir, S_IRWXU) == -1) {
+        syslog(LOG_ERR, "file-xfer: Failed to create dir %s", dir);
+        goto error;
+    }
+
     path = g_strdup(file_path);
     for (i = 0; i < 64 && (stat(path, &st) == 0 || errno != ENOENT); i++) {
         g_free(path);
         path = g_strdup_printf("%s (%d)", file_path, i + 1);
     }
-    g_free(file_path);
     if (i == 64) {
         syslog(LOG_ERR, "file-xfer: more then 63 copies of %s exist?",
                task->file_name);
@@ -211,7 +216,9 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
 
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA, NULL, 0);
+    g_free(file_path);
     g_free(path);
+    g_free(dir);
     return ;
 
 error:
@@ -219,7 +226,9 @@ error:
                 msg->id, VD_AGENT_FILE_XFER_STATUS_ERROR, NULL, 0);
     if (task)
         vdagent_file_xfer_task_free(task);
+    g_free(file_path);
     g_free(path);
+    g_free(dir);
 }
 
 void vdagent_file_xfers_status(struct vdagent_file_xfers *xfers,
