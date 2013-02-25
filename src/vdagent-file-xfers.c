@@ -255,7 +255,7 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
     VDAgentFileXferDataMessage *msg)
 {
     AgentFileXferTask *task;
-    int len;
+    int len, status = -1;
 
     task = vdagent_file_xfers_get_task(xfers, msg->id);
     if (!task)
@@ -277,8 +277,13 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
                        task->id, task->file_name);
             close(task->file_fd);
             task->file_fd = -1;
-        } else
+            status = VD_AGENT_FILE_XFER_STATUS_SUCCESS;
+        } else {
             syslog(LOG_ERR, "file-xfer: error received too much data");
+            status = VD_AGENT_FILE_XFER_STATUS_ERROR;
+        }
+        udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
+                    msg->id, status, NULL, 0);
         g_hash_table_remove(xfers->xfers, GUINT_TO_POINTER(msg->id));
     }
 }
