@@ -262,26 +262,28 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
         return;
 
     len = write(task->file_fd, msg->data, msg->size);
-    if (len == -1) {
+    if (len == msg->size) {
+        task->read_bytes += msg->size;
+        if (task->read_bytes >= task->file_size) {
+            if (task->read_bytes == task->file_size) {
+                if (xfers->debug)
+                    syslog(LOG_DEBUG, "file-xfer: task %u %s has completed",
+                           task->id, task->file_name);
+                close(task->file_fd);
+                task->file_fd = -1;
+                status = VD_AGENT_FILE_XFER_STATUS_SUCCESS;
+            } else {
+                syslog(LOG_ERR, "file-xfer: error received too much data");
+                status = VD_AGENT_FILE_XFER_STATUS_ERROR;
+            }
+        }
+    } else {
         syslog(LOG_ERR, "file-xfer: error writing %s: %s", task->file_name,
                strerror(errno));
-        /* TODO: close, cancel dnd */
-        return ;
+        status = VD_AGENT_FILE_XFER_STATUS_ERROR;
     }
 
-    task->read_bytes += msg->size;
-    if (task->read_bytes >= task->file_size) {
-        if (task->read_bytes == task->file_size) {
-            if (xfers->debug)
-                syslog(LOG_DEBUG, "file-xfer: task %u %s has completed",
-                       task->id, task->file_name);
-            close(task->file_fd);
-            task->file_fd = -1;
-            status = VD_AGENT_FILE_XFER_STATUS_SUCCESS;
-        } else {
-            syslog(LOG_ERR, "file-xfer: error received too much data");
-            status = VD_AGENT_FILE_XFER_STATUS_ERROR;
-        }
+    if (status != -1) {
         udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                     msg->id, status, NULL, 0);
         g_hash_table_remove(xfers->xfers, GUINT_TO_POINTER(msg->id));
