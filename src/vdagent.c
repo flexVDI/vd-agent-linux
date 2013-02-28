@@ -261,7 +261,7 @@ reconnect:
     vdagent_file_xfers_destroy(vdagent_file_xfers);
     vdagent_x11_destroy(x11, client == NULL);
     udscs_destroy_connection(&client);
-    if (!quit)
+    if (!quit && do_daemonize)
         goto reconnect;
 
     return 0;
