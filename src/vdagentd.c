@@ -34,6 +34,7 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
+#include <glib.h>
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
@@ -58,6 +59,7 @@ static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
+static GHashTable *active_xfers = NULL;
 #ifdef HAVE_SESSION_INFO
 static struct session_info *session_info = NULL;
 #endif
@@ -216,32 +218,61 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
                 data, size);
 }
 
+static void cancel_file_xfer(struct vdagent_virtio_port *vport,
+                             const char *msg, uint32_t id)
+{
+    VDAgentFileXferStatusMessage status = {
+        .id = id,
+        .result = VD_AGENT_FILE_XFER_STATUS_CANCELLED,
+    };
+    syslog(LOG_WARNING, msg, id);
+    if (vport)
+        vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
+                                  VD_AGENT_FILE_XFER_STATUS, 0,
+                                  (uint8_t *)&status, sizeof(status));
+}
+
 static void do_client_file_xfer(struct vdagent_virtio_port *vport,
                                 VDAgentMessage *message_header,
                                 uint8_t *data)
 {
-    uint32_t msg_type;
-
-    if (!active_session_conn) {
-        syslog(LOG_WARNING,
-               "Could not find an agent connnection belonging to the "
-               "active session, ignoring client clipboard request");
-        return;
-    }
+    uint32_t msg_type, id;
+    struct udscs_connection *conn;
 
     switch (message_header->type) {
-    case VD_AGENT_FILE_XFER_START:
-        msg_type = VDAGENTD_FILE_XFER_START;
-        break;
-    case VD_AGENT_FILE_XFER_STATUS:
+    case VD_AGENT_FILE_XFER_START: {
+        VDAgentFileXferStartMessage *s = (VDAgentFileXferStartMessage *)data;
+        if (!active_session_conn) {
+            cancel_file_xfer(vport,
+               "Could not find an agent connnection belonging to the "
+               "active session, cancelling client file-xfer request %u",
+               s->id);
+            return;
+        }
+        udscs_write(active_session_conn, VDAGENTD_FILE_XFER_START, 0, 0,
+                    data, message_header->size);
+        return;
+    }
+    case VD_AGENT_FILE_XFER_STATUS: {
+        VDAgentFileXferStatusMessage *s = (VDAgentFileXferStatusMessage *)data;
         msg_type = VDAGENTD_FILE_XFER_STATUS;
-        break;
-    case VD_AGENT_FILE_XFER_DATA:
-        msg_type = VDAGENTD_FILE_XFER_DATA;
+        id = s->id;
         break;
     }
+    case VD_AGENT_FILE_XFER_DATA: {
+        VDAgentFileXferDataMessage *d = (VDAgentFileXferDataMessage *)data;
+        msg_type = VDAGENTD_FILE_XFER_DATA;
+        id = d->id;
+        break;
+    }
+    }
 
-    udscs_write(active_session_conn, msg_type, 0, 0, data, message_header->size);
+    conn = g_hash_table_lookup(active_xfers, GUINT_TO_POINTER(id));
+    if (!conn) {
+        cancel_file_xfer(vport, "Could not find file-xfer %u, cancelling", id);
+        return;
+    }
+    udscs_write(conn, msg_type, 0, 0, data, message_header->size);
 }
 
 int virtio_port_read_complete(
@@ -539,6 +570,16 @@ void update_active_session_connection(void)
     check_xorg_resolution();    
 }
 
+gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
+{
+    if (value == conn) {
+        cancel_file_xfer(virtio_port, "Agent disc; cancelling file-xfer %u",
+                         GPOINTER_TO_UINT(key));
+        return 1;
+    } else
+        return 0;
+}
+
 void agent_connect(struct udscs_connection *conn)
 {
 #ifdef HAVE_SESSION_INFO
@@ -579,6 +620,8 @@ void agent_connect(struct udscs_connection *conn)
 void agent_disconnect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data = udscs_get_user_data(conn);
+
+    g_hash_table_foreach_remove(active_xfers, remove_active_xfers, conn);
 
 #ifndef HAVE_SESSION_INFO
     if (conn == active_session_conn)
@@ -655,6 +698,11 @@ void agent_read_complete(struct udscs_connection **connp,
         vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
                                   VD_AGENT_FILE_XFER_STATUS, 0,
                                   (uint8_t *)&status, sizeof(status));
+        if (status.result == VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA)
+            g_hash_table_insert(active_xfers, GUINT_TO_POINTER(status.id),
+                                *connp);
+        else
+            g_hash_table_remove(active_xfers, GUINT_TO_POINTER(status.id));
         break;
     }
 
@@ -851,6 +899,7 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    active_xfers = g_hash_table_new(g_direct_hash, g_direct_equal);
     main_loop();
 
     release_clipboards();
