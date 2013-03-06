@@ -1,6 +1,6 @@
 /*  vdagentd-proto-strings.h header file
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2013 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -33,6 +33,7 @@ static const char * const vdagentd_messages[] = {
         "file xfer start",
         "file xfer status",
         "file xfer data",
-};        
+        "client disconnected",
+};
 
 #endif

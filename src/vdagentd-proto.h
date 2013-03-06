@@ -1,7 +1,7 @@
 /*  vdagentd-proto.h header file for the protocol over the unix domain socket
     between the vdagent process / xorg-client and the vdagentd (daemon).
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2013 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -39,6 +39,7 @@ enum {
     VDAGENTD_FILE_XFER_START,
     VDAGENTD_FILE_XFER_STATUS,
     VDAGENTD_FILE_XFER_DATA,
+    VDAGENTD_CLIENT_DISCONNECTED,  /* daemon -> client */
     VDAGENTD_NO_MESSAGES /* Must always be last */
 };
 

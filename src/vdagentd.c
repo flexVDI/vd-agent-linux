@@ -1,6 +1,6 @@
 /*  vdagentd.c vdagentd (daemon) code
 
-    Copyright 2010-2012 Red Hat, Inc.
+    Copyright 2010-2013 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -76,6 +76,7 @@ static struct udscs_connection *active_session_conn = NULL;
 static int agent_owns_clipboard[256] = { 0, };
 static int quit = 0;
 static int retval = 0;
+static int client_connected = 0;
 
 /* utility functions */
 /* vdagentd <-> spice-client communication handling */
@@ -104,6 +105,15 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
                               (uint8_t *)caps, size);
     free(caps);
+}
+
+static void do_client_disconnect(void)
+{
+    if (client_connected) {
+        udscs_server_write_all(server, VDAGENTD_CLIENT_DISCONNECTED, 0, 0,
+                               NULL, 0);
+        client_connected = 0;
+    }
 }
 
 static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
@@ -162,8 +172,14 @@ static void do_client_capabilities(struct vdagent_virtio_port *vport,
         }
     }
     memcpy(capabilities, caps->caps, capabilities_size * sizeof(uint32_t));
-    if (caps->request)
+    if (caps->request) {
+        /* Report the previous client has disconneced. */
+        do_client_disconnect();
+        if (debug)
+            syslog(LOG_DEBUG, "New client connected");
+        client_connected = 1;
         send_capabilities(vport, 0);
+    }
 }
 
 static void do_client_clipboard(struct vdagent_virtio_port *vport,
@@ -348,6 +364,10 @@ int virtio_port_read_complete(
     case VD_AGENT_FILE_XFER_STATUS:
     case VD_AGENT_FILE_XFER_DATA:
         do_client_file_xfer(vport, message_header, data);
+        break;
+    case VD_AGENT_CLIENT_DISCONNECTED:
+        vdagent_virtio_port_reset(vport, VDP_CLIENT_PORT);
+        do_client_disconnect();
         break;
     default:
         syslog(LOG_WARNING, "unknown message type %d, ignoring",
@@ -792,16 +812,20 @@ void main_loop(void)
         if (virtio_port) {
             vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
             if (!virtio_port) {
+                int old_client_connected = client_connected;
                 syslog(LOG_CRIT,
                        "AIIEEE lost spice client connection, reconnecting");
                 virtio_port = vdagent_virtio_port_create(portdev,
                                                      virtio_port_read_complete,
                                                      NULL);
-            }
-            if (!virtio_port) {
-                syslog(LOG_CRIT, "Fatal error opening vdagent virtio channel");
-                retval = 1;
-                break;
+                if (!virtio_port) {
+                    syslog(LOG_CRIT,
+                           "Fatal error opening vdagent virtio channel");
+                    retval = 1;
+                    break;
+                }
+                do_client_disconnect();
+                client_connected = old_client_connected;
             }
         }
 

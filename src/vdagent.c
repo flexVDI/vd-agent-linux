@@ -1,6 +1,6 @@
 /*  vdagent.c xorg-client to vdagentd (daemon).
 
-    Copyright 2010 Red Hat, Inc.
+    Copyright 2010-2013 Red Hat, Inc.
 
     Red Hat Authors:
     Hans de Goede <hdegoede@redhat.com>
@@ -98,6 +98,10 @@ void daemon_read_complete(struct udscs_connection **connp,
         vdagent_file_xfers_data(vdagent_file_xfers,
                                 (VDAgentFileXferDataMessage *)data);
         free(data);
+        break;
+    case VDAGENTD_CLIENT_DISCONNECTED:
+        vdagent_file_xfers_destroy(vdagent_file_xfers);
+        vdagent_file_xfers = vdagent_file_xfers_create(client, debug);
         break;
     default:
         syslog(LOG_ERR, "Unknown message from vdagentd type: %d, ignoring",
