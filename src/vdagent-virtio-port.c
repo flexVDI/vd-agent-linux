@@ -260,6 +260,16 @@ void vdagent_virtio_port_flush(struct vdagent_virtio_port **vportp)
         vdagent_virtio_port_do_write(vportp);
 }
 
+void vdagent_virtio_port_reset(struct vdagent_virtio_port *vport, int port)
+{
+    if (port > VDP_LAST_PORT) {
+        syslog(LOG_ERR, "vdagent_virtio_port_reset port out of range");
+        return;
+    }
+    free(vport->port_data[port].message_data);
+    memset(&vport->port_data[port], 0, sizeof(vport->port_data[0]));
+}
+
 static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **vportp)
 {
     int avail, read, pos = 0;
