@@ -189,9 +189,11 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
         g_free(path);
         path = g_strdup_printf("%s (%d)", file_path, i + 1);
     }
+    g_free(task->file_name);
+    task->file_name = path;
     if (i == 64) {
         syslog(LOG_ERR, "file-xfer: more then 63 copies of %s exist?",
-               task->file_name);
+               file_path);
         goto error;
     }
 
@@ -217,7 +219,6 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     udscs_write(xfers->vdagentd, VDAGENTD_FILE_XFER_STATUS,
                 msg->id, VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA, NULL, 0);
     g_free(file_path);
-    g_free(path);
     g_free(dir);
     return ;
 
@@ -227,7 +228,6 @@ error:
     if (task)
         vdagent_file_xfer_task_free(task);
     g_free(file_path);
-    g_free(path);
     g_free(dir);
 }
 
