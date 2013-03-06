@@ -392,6 +392,8 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
         vport->chunk_data_pos += n;
         if (vport->chunk_data_pos == vport->chunk_header.size) {
             vdagent_virtio_port_do_chunk(vportp);
+            if (!*vportp)
+                return;
             vport->chunk_header_read = 0;
             vport->chunk_data_pos = 0;
         }
