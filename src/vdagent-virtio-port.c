@@ -388,12 +388,14 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
         vport->chunk_header_read += n;
         if (vport->chunk_header_read == sizeof(vport->chunk_header)) {
             if (vport->chunk_header.size > VD_AGENT_MAX_DATA_SIZE) {
-                syslog(LOG_ERR, "chunk size too large");
+                syslog(LOG_ERR, "chunk size %u too large",
+                       vport->chunk_header.size);
                 vdagent_virtio_port_destroy(vportp);
                 return;
             }
             if (vport->chunk_header.port > VDP_LAST_PORT) {
-                syslog(LOG_ERR, "chunk port out of range");
+                syslog(LOG_ERR, "chunk port %u out of range",
+                       vport->chunk_header.port);
                 vdagent_virtio_port_destroy(vportp);
                 return;
             }
