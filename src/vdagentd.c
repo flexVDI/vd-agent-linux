@@ -285,7 +285,8 @@ static void do_client_file_xfer(struct vdagent_virtio_port *vport,
 
     conn = g_hash_table_lookup(active_xfers, GUINT_TO_POINTER(id));
     if (!conn) {
-        cancel_file_xfer(vport, "Could not find file-xfer %u, cancelling", id);
+        if (debug)
+            syslog(LOG_DEBUG, "Could not find file-xfer %u (cancelled?)", id);
         return;
     }
     udscs_write(conn, msg_type, 0, 0, data, message_header->size);
