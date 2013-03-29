@@ -31,11 +31,13 @@
    Calling XPending when-ever we return to the mainloop also ensures any
    pending writes are flushed. */
 
+#include <glib.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <string.h>
 #include <syslog.h>
 #include <assert.h>
+#include <unistd.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xfixes.h>
@@ -43,10 +45,8 @@
 #include "vdagent-x11.h"
 #include "vdagent-x11-priv.h"
 
-#if 0
 /* Stupid X11 API, there goes our encapsulate all data in a struct design */
 static int (*vdagent_x11_prev_error_handler)(Display *, XErrorEvent *);
-#endif
 
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event, int incr);
@@ -79,7 +79,15 @@ static int vdagent_x11_debug_error_handler(
     abort();
 }
 
-#if 0
+static int vdagent_x11_ignore_bad_window_handler(
+    Display *display, XErrorEvent *error)
+{
+    if (error->error_code == BadWindow)
+        return 0;
+
+    return vdagent_x11_prev_error_handler(display, error);
+}
+
 static void vdagent_x11_set_error_handler(
     int (*handler)(Display *, XErrorEvent *))
 {
@@ -90,7 +98,68 @@ static void vdagent_x11_restore_error_handler(void)
 {
     XSetErrorHandler(vdagent_x11_prev_error_handler);
 }
-#endif
+
+static void vdagent_x11_get_wm_name(struct vdagent_x11 *x11)
+{
+    Atom type_ret;
+    int format_ret;
+    unsigned long len, remain;
+    unsigned char *data = NULL;
+    Window sup_window = None;
+
+    /* XGetWindowProperty can throw a BadWindow error. One way we can trigger
+       this is when the display-manager (ie gdm) has set, and not cleared the
+       _NET_SUPPORTING_WM_CHECK property, and the window manager running in
+       the user session has not yet updated it to point to its window, so its
+       pointing to a non existing window. */
+    vdagent_x11_set_error_handler(vdagent_x11_ignore_bad_window_handler);
+
+    /* Get the window manager SUPPORTING_WM_CHECK window */
+    if (XGetWindowProperty(x11->display, x11->root_window,
+            XInternAtom(x11->display, "_NET_SUPPORTING_WM_CHECK", False), 0,
+            LONG_MAX, False, XA_WINDOW, &type_ret, &format_ret, &len,
+            &remain, &data) == Success) {
+        if (type_ret == XA_WINDOW)
+            sup_window = *((Window *)data);
+        XFree(data);
+    }
+    if (sup_window == None &&
+        XGetWindowProperty(x11->display, x11->root_window,
+            XInternAtom(x11->display, "_WIN_SUPPORTING_WM_CHECK", False), 0,
+            LONG_MAX, False, XA_CARDINAL, &type_ret, &format_ret, &len,
+            &remain, &data) == Success) {
+        if (type_ret == XA_CARDINAL)
+            sup_window = *((Window *)data);
+        XFree(data);
+    }
+    /* So that we can get the net_wm_name */
+    if (sup_window != None) {
+        Atom utf8 = XInternAtom(x11->display, "UTF8_STRING", False);
+        if (XGetWindowProperty(x11->display, sup_window,
+                XInternAtom(x11->display, "_NET_WM_NAME", False), 0,
+                LONG_MAX, False, utf8, &type_ret, &format_ret, &len,
+                &remain, &data) == Success) {
+            if (type_ret == utf8) {
+                x11->net_wm_name =
+                    g_strndup((char *)data, (format_ret / 8) * len);
+            }
+            XFree(data);
+        }
+        if (x11->net_wm_name == NULL &&
+            XGetWindowProperty(x11->display, sup_window,
+                XInternAtom(x11->display, "_NET_WM_NAME", False), 0,
+                LONG_MAX, False, XA_STRING, &type_ret, &format_ret, &len,
+                &remain, &data) == Success) {
+            if (type_ret == XA_STRING) {
+                x11->net_wm_name =
+                    g_strndup((char *)data, (format_ret / 8) * len);
+            }
+            XFree(data);
+        }
+    }
+
+    vdagent_x11_restore_error_handler();
+}
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int debug, int sync)
@@ -182,6 +251,15 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->height = attrib.height;
     vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
 
+    /* Get net_wm_name, since we are started at the same time as the wm,
+       sometimes we need to wait a bit for it to show up. */
+    i = 10;
+    vdagent_x11_get_wm_name(x11);
+    while (x11->net_wm_name == NULL && --i > 0) {
+        usleep(100000);
+        vdagent_x11_get_wm_name(x11);
+    }
+
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);
 
@@ -203,6 +281,7 @@ void vdagent_x11_destroy(struct vdagent_x11 *x11, int vdagentd_disconnected)
     }
 
     XCloseDisplay(x11->display);
+    g_free(x11->net_wm_name);
     free(x11->randr.failed_conf);
     free(x11);
 }

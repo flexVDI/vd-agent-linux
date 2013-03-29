@@ -85,6 +85,7 @@ struct vdagent_x11 {
     Window root_window;
     Window selection_window;
     struct udscs_connection *vdagentd;
+    char *net_wm_name;
     int debug;
     int fd;
     int screen;
