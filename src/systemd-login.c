@@ -73,7 +73,7 @@ const char *session_info_get_active_session(struct session_info *si)
     si->session = NULL;
     r = sd_seat_get_active("seat0", &si->session, NULL);
     /* ENOENT happens when a seat is switching from one session to another */
-    if (r < 0 && r != ENOENT)
+    if (r < 0 && r != -ENOENT)
         syslog(LOG_ERR, "Error getting active session: %s",
                 strerror(-r));
 
