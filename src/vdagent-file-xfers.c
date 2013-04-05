@@ -43,6 +43,7 @@ struct vdagent_file_xfers {
     GHashTable *xfers;
     struct udscs_connection *vdagentd;
     char *save_dir;
+    int open_save_dir;
     int debug;
 };
 
@@ -52,6 +53,8 @@ typedef struct AgentFileXferTask {
     uint64_t                       read_bytes;
     char                           *file_name;
     uint64_t                       file_size;
+    int                            file_xfer_nr;
+    int                            file_xfer_total;
     int                            debug;
 } AgentFileXferTask;
 
@@ -75,7 +78,8 @@ static void vdagent_file_xfer_task_free(gpointer data)
 }
 
 struct vdagent_file_xfers *vdagent_file_xfers_create(
-    struct udscs_connection *vdagentd, const char *save_dir, int debug)
+    struct udscs_connection *vdagentd, const char *save_dir,
+    int open_save_dir, int debug)
 {
     struct vdagent_file_xfers *xfers;
 
@@ -84,6 +88,7 @@ struct vdagent_file_xfers *vdagent_file_xfers_create(
                                          NULL, vdagent_file_xfer_task_free);
     xfers->vdagentd = vdagentd;
     xfers->save_dir = g_strdup(save_dir);
+    xfers->open_save_dir = open_save_dir;
     xfers->debug = debug;
 
     return xfers;
@@ -141,6 +146,11 @@ static AgentFileXferTask *vdagent_parse_start_msg(
                error->message);
         goto error;
     }
+    /* These are set for xfers which are part of a multi-file xfer */
+    task->file_xfer_nr = g_key_file_get_integer(
+        keyfile, "vdagent-file-xfer", "file-xfer-nr", NULL);
+    task->file_xfer_total = g_key_file_get_integer(
+        keyfile, "vdagent-file-xfer", "file-xfer-total", NULL);
 
     g_key_file_free(keyfile);
     return task;
@@ -270,6 +280,12 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
                            task->id, task->file_name);
                 close(task->file_fd);
                 task->file_fd = -1;
+                if (xfers->open_save_dir &&
+                        task->file_xfer_nr == task->file_xfer_total) {
+                    char buf[PATH_MAX];
+                    snprintf(buf, PATH_MAX, "xdg-open '%s'&", xfers->save_dir);
+                    status = system(buf);
+                }
                 status = VD_AGENT_FILE_XFER_STATUS_SUCCESS;
             } else {
                 syslog(LOG_ERR, "file-xfer: error received too much data");
