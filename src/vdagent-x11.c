@@ -43,6 +43,11 @@
 #include "vdagent-x11.h"
 #include "vdagent-x11-priv.h"
 
+#if 0
+/* Stupid X11 API, there goes our encapsulate all data in a struct design */
+static int (*vdagent_x11_prev_error_handler)(Display *, XErrorEvent *);
+#endif
+
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event, int incr);
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11);
@@ -68,10 +73,24 @@ static const char *vdagent_x11_sel_to_str(uint8_t selection) {
     }
 }
 
-static int debug_error_handler(Display *display, XErrorEvent *error)
+static int vdagent_x11_debug_error_handler(
+    Display *display, XErrorEvent *error)
 {
     abort();
 }
+
+#if 0
+static void vdagent_x11_set_error_handler(
+    int (*handler)(Display *, XErrorEvent *))
+{
+    vdagent_x11_prev_error_handler = XSetErrorHandler(handler);
+}
+
+static void vdagent_x11_restore_error_handler(void)
+{
+    XSetErrorHandler(vdagent_x11_prev_error_handler);
+}
+#endif
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     int debug, int sync)
@@ -97,7 +116,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     }
 
     if (sync) {
-        XSetErrorHandler(debug_error_handler);
+        XSetErrorHandler(vdagent_x11_debug_error_handler);
         XSynchronize(x11->display, True);
     }
 
