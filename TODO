@@ -1,6 +1,3 @@
--patch xorg driver to allow adding "random" resolutions
--make vdagent xorg client try to add "random" resolutions
-
 Maybe:
 -Add support for selections with a target of STRING, which are
  ISO Latin-1 strings, which we could support through iconv
