@@ -34,6 +34,7 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
+#include <glib.h>
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
@@ -43,6 +44,7 @@
 
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static int debug = 0;
+static const char *fx_dir = NULL;
 static struct vdagent_x11 *x11 = NULL;
 static struct vdagent_file_xfers *vdagent_file_xfers = NULL;
 static struct udscs_connection *client = NULL;
@@ -101,7 +103,7 @@ void daemon_read_complete(struct udscs_connection **connp,
         break;
     case VDAGENTD_CLIENT_DISCONNECTED:
         vdagent_file_xfers_destroy(vdagent_file_xfers);
-        vdagent_file_xfers = vdagent_file_xfers_create(client, debug);
+        vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir, debug);
         break;
     default:
         syslog(LOG_ERR, "Unknown message from vdagentd type: %d, ignoring",
@@ -127,13 +129,14 @@ int client_setup(int reconnect)
 static void usage(FILE *fp)
 {
     fprintf(fp,
-            "vdagent -- spice agent xorg client\n"
-            "options:\n"
-            "  -h         print this text\n"
-            "  -d         log debug messages\n"
-            "  -s <port>  set virtio serial port  [%s]\n"
-            "  -x         don't daemonize\n",
-            portdev);
+      "vdagent -- spice agent xorg client\n"
+      "options:\n"
+      "  -h                                print this text\n"
+      "  -d                                log debug messages\n"
+      "  -s <port>                         set virtio serial port [%s]\n"
+      "  -x                                don't daemonize\n"
+      "  -f <dir|xdg-desktop|xdg-download> file xfer save dir\n",
+      portdev);
 }
 
 static void quit_handler(int sig)
@@ -176,7 +179,7 @@ int main(int argc, char *argv[])
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dxhys:")))
+        if (-1 == (c = getopt(argc, argv, "-dxhys:f:")))
             break;
         switch (c) {
         case 'd':
@@ -194,6 +197,9 @@ int main(int argc, char *argv[])
         case 'h':
             usage(stdout);
             return 0;
+        case 'f':
+            fx_dir = optarg;
+            break;
         default:
             usage(stderr);
             return 1;
@@ -237,7 +243,22 @@ reconnect:
         return 1;
     }
 
-    vdagent_file_xfers = vdagent_file_xfers_create(client, debug);
+    if (!fx_dir) {
+        if (vdagent_x11_has_icons_on_desktop(x11))
+            fx_dir = "xdg-desktop";
+        else
+            fx_dir = "xdg-download";
+    }
+    if (!strcmp(fx_dir, "xdg-desktop"))
+        fx_dir = g_get_user_special_dir(G_USER_DIRECTORY_DESKTOP);
+    else if (!strcmp(fx_dir, "xdg-download"))
+        fx_dir = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
+    if (!fx_dir) {
+        syslog(LOG_WARNING,
+               "warning could not get file xfer save dir, using cwd");
+        fx_dir = ".";
+    }
+    vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir, debug);
 
     while (client && !quit) {
         FD_ZERO(&readfds);

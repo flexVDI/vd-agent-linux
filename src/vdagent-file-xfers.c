@@ -42,6 +42,7 @@
 struct vdagent_file_xfers {
     GHashTable *xfers;
     struct udscs_connection *vdagentd;
+    char *save_dir;
     int debug;
 };
 
@@ -74,7 +75,7 @@ static void vdagent_file_xfer_task_free(gpointer data)
 }
 
 struct vdagent_file_xfers *vdagent_file_xfers_create(
-    struct udscs_connection *vdagentd, int debug)
+    struct udscs_connection *vdagentd, const char *save_dir, int debug)
 {
     struct vdagent_file_xfers *xfers;
 
@@ -82,6 +83,7 @@ struct vdagent_file_xfers *vdagent_file_xfers_create(
     xfers->xfers = g_hash_table_new_full(g_direct_hash, g_direct_equal,
                                          NULL, vdagent_file_xfer_task_free);
     xfers->vdagentd = vdagentd;
+    xfers->save_dir = g_strdup(save_dir);
     xfers->debug = debug;
 
     return xfers;
@@ -90,6 +92,7 @@ struct vdagent_file_xfers *vdagent_file_xfers_create(
 void vdagent_file_xfers_destroy(struct vdagent_file_xfers *xfers)
 {
     g_hash_table_destroy(xfers->xfers);
+    g_free(xfers->save_dir);
     g_free(xfers);
 }
 
@@ -156,7 +159,6 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
 {
     AgentFileXferTask *task;
     char *dir = NULL, *path = NULL, *file_path = NULL;
-    const gchar *desktop;
     struct stat st;
     int i;
 
@@ -172,11 +174,8 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     }
 
     task->debug = xfers->debug;
-    desktop = g_get_user_special_dir(G_USER_DIRECTORY_DESKTOP);
-    if (desktop == NULL) {
-        goto error;
-    }
-    file_path = g_build_filename(desktop, task->file_name, NULL);
+
+    file_path = g_build_filename(xfers->save_dir, task->file_name, NULL);
 
     dir = g_path_get_dirname(file_path);
     if (g_mkdir_with_parents(dir, S_IRWXU) == -1) {

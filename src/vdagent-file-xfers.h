@@ -27,7 +27,7 @@
 struct vdagent_file_xfers;
 
 struct vdagent_file_xfers *vdagent_file_xfers_create(
-        struct udscs_connection *vdagentd, int debug);
+        struct udscs_connection *vdagentd, const char *save_dir, int debug);
 void vdagent_file_xfers_destroy(struct vdagent_file_xfers *xfer);
 
 void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
