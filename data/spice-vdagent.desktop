@@ -6,4 +6,3 @@ Terminal=false
 Type=Application
 Categories=
 X-GNOME-Autostart-Phase=Initialization
-X-GNOME-AutoRestart=true
