@@ -32,32 +32,10 @@
 #include "vdagent-x11.h"
 #include "vdagent-x11-priv.h"
 
-static int caught_error;
-static int (*old_error_handler)(Display *, XErrorEvent *);
-
 static int error_handler(Display *display, XErrorEvent *error)
 {
-    caught_error = 1;
+    vdagent_x11_caught_error = 1;
     return 0;
-}
-
-static void arm_error_handler(struct vdagent_x11 *x11)
-{
-    caught_error = 0;
-    XSync(x11->display, False);
-    old_error_handler = XSetErrorHandler(error_handler);
-}
-
-static int check_error_handler(struct vdagent_x11 *x11)
-{
-    int error;
-
-    XSync(x11->display, False);
-    XSetErrorHandler(old_error_handler);
-    error = caught_error;
-    caught_error = 0;
-
-    return error;
 }
 
 static XRRModeInfo *mode_from_id(struct vdagent_x11 *x11, int id)
@@ -237,12 +215,12 @@ static void delete_mode(struct vdagent_x11 *x11, int output_index,
             break;
     }
     if (m < x11->randr.res->nmode) {
-        arm_error_handler(x11);
+        vdagent_x11_set_error_handler(x11, error_handler);
         XRRDeleteOutputMode (x11->display, x11->randr.res->outputs[output_index],
                              mode->id);
         XRRDestroyMode (x11->display, mode->id);
 	// ignore race error, if mode is created by others
-	check_error_handler(x11);
+	vdagent_x11_restore_error_handler(x11);
     }
 
     /* silly to update everytime for more then one monitor */
@@ -337,10 +315,10 @@ static XRRModeInfo *create_new_mode(struct vdagent_x11 *x11, int output_index,
     set_reduced_cvt_mode(&mode, width, height);
     mode.modeFlags = 0;
     mode.id = 0;
-    arm_error_handler(x11);
+    vdagent_x11_set_error_handler(x11, error_handler);
     XRRCreateMode (x11->display, x11->root_window, &mode);
     // ignore race error, if mode is created by others
-    check_error_handler(x11);
+    vdagent_x11_restore_error_handler(x11);
 
     /* silly to update everytime for more then one monitor */
     update_randr_res(x11, 0);
@@ -786,11 +764,11 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         if (x11->debug)
             syslog(LOG_DEBUG, "Changing screen size to %dx%d",
                    primary_w, primary_h);
-        arm_error_handler(x11);
+        vdagent_x11_set_error_handler(x11, error_handler);
         XRRSetScreenSize(x11->display, x11->root_window, primary_w, primary_h,
                          DisplayWidthMM(x11->display, x11->screen),
                          DisplayHeightMM(x11->display, x11->screen));
-        if (check_error_handler(x11)) {
+        if (vdagent_x11_restore_error_handler(x11)) {
             syslog(LOG_ERR, "XRRSetScreenSize failed, not enough mem?");
             if (!fallback && curr) {
                 syslog(LOG_WARNING, "Restoring previous config");

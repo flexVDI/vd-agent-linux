@@ -135,10 +135,17 @@ struct vdagent_x11 {
     int dont_send_guest_xorg_res;
 };
 
+extern int (*vdagent_x11_prev_error_handler)(Display *, XErrorEvent *);
+extern int vdagent_x11_caught_error;
+
 void vdagent_x11_randr_init(struct vdagent_x11 *x11);
 void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11,
                                             int update);
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
                                                int width, int height);
+
+void vdagent_x11_set_error_handler(struct vdagent_x11 *x11,
+    int (*handler)(Display *, XErrorEvent *));
+int vdagent_x11_restore_error_handler(struct vdagent_x11 *x11);
 
 #endif // VDAGENT_X11_PRIV

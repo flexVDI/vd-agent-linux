@@ -46,7 +46,8 @@
 #include "vdagent-x11-priv.h"
 
 /* Stupid X11 API, there goes our encapsulate all data in a struct design */
-static int (*vdagent_x11_prev_error_handler)(Display *, XErrorEvent *);
+int (*vdagent_x11_prev_error_handler)(Display *, XErrorEvent *);
+int vdagent_x11_caught_error;
 
 static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
                                                 XEvent *event, int incr);
@@ -88,15 +89,24 @@ static int vdagent_x11_ignore_bad_window_handler(
     return vdagent_x11_prev_error_handler(display, error);
 }
 
-static void vdagent_x11_set_error_handler(
+void vdagent_x11_set_error_handler(struct vdagent_x11 *x11,
     int (*handler)(Display *, XErrorEvent *))
 {
+    XSync(x11->display, False);
+    vdagent_x11_caught_error = 0;
     vdagent_x11_prev_error_handler = XSetErrorHandler(handler);
 }
 
-static void vdagent_x11_restore_error_handler(void)
+int vdagent_x11_restore_error_handler(struct vdagent_x11 *x11)
 {
+    int error;
+
+    XSync(x11->display, False);
     XSetErrorHandler(vdagent_x11_prev_error_handler);
+    error = vdagent_x11_caught_error;
+    vdagent_x11_caught_error = 0;
+
+    return error;
 }
 
 static void vdagent_x11_get_wm_name(struct vdagent_x11 *x11)
@@ -112,7 +122,7 @@ static void vdagent_x11_get_wm_name(struct vdagent_x11 *x11)
        _NET_SUPPORTING_WM_CHECK property, and the window manager running in
        the user session has not yet updated it to point to its window, so its
        pointing to a non existing window. */
-    vdagent_x11_set_error_handler(vdagent_x11_ignore_bad_window_handler);
+    vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
 
     /* Get the window manager SUPPORTING_WM_CHECK window */
     if (XGetWindowProperty(x11->display, x11->root_window,
@@ -158,7 +168,7 @@ static void vdagent_x11_get_wm_name(struct vdagent_x11 *x11)
         }
     }
 
-    vdagent_x11_restore_error_handler();
+    vdagent_x11_restore_error_handler(x11);
 }
 
 struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
