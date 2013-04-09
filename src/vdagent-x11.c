@@ -80,6 +80,8 @@ static int vdagent_x11_debug_error_handler(
     abort();
 }
 
+/* With the clipboard we're sometimes dealing with Properties on another apps
+   Window. which can go away at any time. */
 static int vdagent_x11_ignore_bad_window_handler(
     Display *display, XErrorEvent *error)
 {
@@ -940,7 +942,10 @@ static void vdagent_x11_send_selection_notify(struct vdagent_x11 *x11,
     res.xselection.selection = event->xselectionrequest.selection;
     res.xselection.target = event->xselectionrequest.target;
     res.xselection.time = event->xselectionrequest.time;
+
+    vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
     XSendEvent(x11->display, event->xselectionrequest.requestor, 0, 0, &res);
+    vdagent_x11_restore_error_handler(x11);
 
     if (!request) {
         vdagent_x11_next_selection_request(x11);
@@ -976,11 +981,16 @@ exit_loop:
     if (prop == None)
         prop = event->xselectionrequest.target;
 
+    vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
     XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
                     XA_ATOM, 32, PropModeReplace, (unsigned char *)&targets,
                     target_count);
-    vdagent_x11_print_targets(x11, selection, "sent", targets, target_count);
-    vdagent_x11_send_selection_notify(x11, prop, NULL);
+    if (vdagent_x11_restore_error_handler(x11) == 0) {
+        vdagent_x11_print_targets(x11, selection, "sent",
+                                  targets, target_count);
+        vdagent_x11_send_selection_notify(x11, prop, NULL);
+    } else
+        SELPRINTF("send_targets: Failed to sent, requestor window gone");
 }
 
 static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
@@ -1053,11 +1063,17 @@ static void vdagent_x11_handle_property_delete_notify(struct vdagent_x11 *x11,
     } else {
         VSELPRINTF("Ending incr send of clipboard data");
     }
+    vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
     XChangeProperty(x11->display, sel_event->xselectionrequest.requestor,
                     x11->selection_req_atom,
                     sel_event->xselectionrequest.target, 8, PropModeReplace,
                     x11->selection_req_data + x11->selection_req_data_pos,
                     len);
+    if (vdagent_x11_restore_error_handler(x11)) {
+        SELPRINTF("incr sent failed, requestor window gone");
+        len = 0;
+    }
+
     x11->selection_req_data_pos += len;
 
     /* Note we must explictly send a 0 sized XChangeProperty to signal the
@@ -1207,21 +1223,33 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint8_t selection,
     if (size > x11->max_prop_size) {
         unsigned long len = size;
         VSELPRINTF("Starting incr send of clipboard data");
-        x11->selection_req_data = data;
-        x11->selection_req_data_pos = 0;
-        x11->selection_req_data_size = size;
-        x11->selection_req_atom = prop;
+
+        vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
         XSelectInput(x11->display, event->xselectionrequest.requestor,
                      PropertyChangeMask);
         XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
                         x11->incr_atom, 32, PropModeReplace,
                         (unsigned char*)&len, 1);
-        vdagent_x11_send_selection_notify(x11, prop, x11->selection_req);
+        if (vdagent_x11_restore_error_handler(x11) == 0) {
+            x11->selection_req_data = data;
+            x11->selection_req_data_pos = 0;
+            x11->selection_req_data_size = size;
+            x11->selection_req_atom = prop;
+            vdagent_x11_send_selection_notify(x11, prop, x11->selection_req);
+        } else {
+            SELPRINTF("clipboard data sent failed, requestor window gone");
+            free(data);
+        }
     } else {
+        vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
         XChangeProperty(x11->display, event->xselectionrequest.requestor, prop,
                         event->xselectionrequest.target, 8, PropModeReplace,
                         data, size);
-        vdagent_x11_send_selection_notify(x11, prop, NULL);
+        if (vdagent_x11_restore_error_handler(x11) == 0)
+            vdagent_x11_send_selection_notify(x11, prop, NULL);
+        else
+            SELPRINTF("clipboard data sent failed, requestor window gone");
+
         free(data);
     }
 
