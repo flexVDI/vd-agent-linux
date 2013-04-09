@@ -259,6 +259,9 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         usleep(100000);
         vdagent_x11_get_wm_name(x11);
     }
+    if (x11->debug && x11->net_wm_name)
+        syslog(LOG_DEBUG, "net_wm_name: \"%s\", has icons: %d",
+               x11->net_wm_name, vdagent_x11_has_icons_on_desktop(x11));
 
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);
@@ -1244,4 +1247,27 @@ void vdagent_x11_clipboard_release(struct vdagent_x11 *x11, uint8_t selection)
 
     /* Flush output buffers and consume any pending events */
     vdagent_x11_do_read(x11);
+}
+
+/* Function used to determine the default location to save file-xfers,
+   xdg desktop dir or xdg download dir. We error on the save side and use a
+   whitelist approach, so any unknown desktops will end up with saving
+   file-xfers to the xdg download dir, and opening the xdg download dir with
+   xdg-open when the file-xfer completes. */
+int vdagent_x11_has_icons_on_desktop(struct vdagent_x11 *x11)
+{
+    const char * const wms_with_icons_on_desktop[] = {
+        "Metacity", /* GNOME-2 or GNOME-3 fallback */
+        "Xfwm4",    /* XFCE */
+        "Marco",    /* Mate */
+        NULL
+    };
+    int i;
+
+    if (x11->net_wm_name)
+        for (i = 0; wms_with_icons_on_desktop[i]; i++)
+            if (!strcmp(x11->net_wm_name, wms_with_icons_on_desktop[i]))
+                return 1;
+
+    return 0;
 }

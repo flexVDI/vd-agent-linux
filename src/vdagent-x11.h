@@ -37,6 +37,7 @@ void vdagent_x11_do_read(struct vdagent_x11 *x11);
 
 void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     VDAgentMonitorsConfig *mon_config, int fallback);
+
 void vdagent_x11_clipboard_grab(struct vdagent_x11 *x11, uint8_t selection,
     uint32_t *types, uint32_t type_count);
 void vdagent_x11_clipboard_request(struct vdagent_x11 *x11,
@@ -44,5 +45,7 @@ void vdagent_x11_clipboard_request(struct vdagent_x11 *x11,
 void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint8_t selection,
     uint32_t type, uint8_t *data, uint32_t size);
 void vdagent_x11_clipboard_release(struct vdagent_x11 *x11, uint8_t selection);
+
+int vdagent_x11_has_icons_on_desktop(struct vdagent_x11 *x11);
 
 #endif
