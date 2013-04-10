@@ -94,9 +94,9 @@ static void update_randr_res(struct vdagent_x11 *x11, int poll)
 
     free_randr_resources(x11);
     if (poll)
-        x11->randr.res = XRRGetScreenResources(x11->display, x11->root_window);
+        x11->randr.res = XRRGetScreenResources(x11->display, x11->root_window[0]);
     else
-        x11->randr.res = XRRGetScreenResourcesCurrent(x11->display, x11->root_window);
+        x11->randr.res = XRRGetScreenResourcesCurrent(x11->display, x11->root_window[0]);
     x11->randr.outputs = malloc(x11->randr.res->noutput * sizeof(*x11->randr.outputs));
     x11->randr.crtcs = malloc(x11->randr.res->ncrtc * sizeof(*x11->randr.crtcs));
     for (i = 0 ; i < x11->randr.res->noutput; ++i) {
@@ -110,7 +110,7 @@ static void update_randr_res(struct vdagent_x11 *x11, int poll)
                                              x11->randr.res->crtcs[i]);
     }
     /* XXX is this dynamic? should it be cached? */
-    if (XRRGetScreenSizeRange(x11->display, x11->root_window,
+    if (XRRGetScreenSizeRange(x11->display, x11->root_window[0],
                               &x11->randr.min_width,
                               &x11->randr.min_height,
                               &x11->randr.max_width,
@@ -316,7 +316,7 @@ static XRRModeInfo *create_new_mode(struct vdagent_x11 *x11, int output_index,
     mode.modeFlags = 0;
     mode.id = 0;
     vdagent_x11_set_error_handler(x11, error_handler);
-    XRRCreateMode (x11->display, x11->root_window, &mode);
+    XRRCreateMode (x11->display, x11->root_window[0], &mode);
     // ignore race error, if mode is created by others
     vdagent_x11_restore_error_handler(x11);
 
@@ -408,7 +408,7 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
     XRRScreenConfiguration *config;
     Rotation rotation;
 
-    sizes = XRRSizes(x11->display, x11->screen, &num_sizes);
+    sizes = XRRSizes(x11->display, 0, &num_sizes);
     if (!sizes || !num_sizes) {
         syslog(LOG_ERR, "XRRSizes failed");
         return 0;
@@ -436,13 +436,13 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
         return 0;
     }
 
-    config = XRRGetScreenInfo(x11->display, x11->root_window);
+    config = XRRGetScreenInfo(x11->display, x11->root_window[0]);
     if(!config) {
         syslog(LOG_ERR, "get screen info failed");
         return 0;
     }
     XRRConfigCurrentConfiguration(config, &rotation);
-    XRRSetScreenConfig(x11->display, config, x11->root_window, best,
+    XRRSetScreenConfig(x11->display, config, x11->root_window[0], best,
                        rotation, CurrentTime);
     XRRFreeScreenConfigInfo(config);
 
@@ -457,7 +457,7 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
                                                int width, int height)
 {
-    if (width == x11->width && height == x11->height) {
+    if (width == x11->width[0] && height == x11->height[0]) {
         return;
     }
 
@@ -465,8 +465,8 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
         syslog(LOG_DEBUG, "Root size changed to %dx%d send %d",
                width, height, !x11->dont_send_guest_xorg_res);
 
-    x11->width  = width;
-    x11->height = height;
+    x11->width[0]  = width;
+    x11->height[0] = height;
     if (!x11->dont_send_guest_xorg_res) {
         vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
     }
@@ -730,7 +730,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     curr = get_current_mon_config(x11);
     if (same_monitor_configs(mon_config, curr) &&
-           x11->width == primary_w && x11->height == primary_h) {
+           x11->width[0] == primary_w && x11->height[0] == primary_h) {
         goto exit;
     }
 
@@ -760,14 +760,14 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         }
     }
 
-    if (primary_w != x11->width || primary_h != x11->height) {
+    if (primary_w != x11->width[0] || primary_h != x11->height[0]) {
         if (x11->debug)
             syslog(LOG_DEBUG, "Changing screen size to %dx%d",
                    primary_w, primary_h);
         vdagent_x11_set_error_handler(x11, error_handler);
-        XRRSetScreenSize(x11->display, x11->root_window, primary_w, primary_h,
-                         DisplayWidthMM(x11->display, x11->screen),
-                         DisplayHeightMM(x11->display, x11->screen));
+        XRRSetScreenSize(x11->display, x11->root_window[0], primary_w, primary_h,
+                         DisplayWidthMM(x11->display, 0),
+                         DisplayHeightMM(x11->display, 0));
         if (vdagent_x11_restore_error_handler(x11)) {
             syslog(LOG_ERR, "XRRSetScreenSize failed, not enough mem?");
             if (!fallback && curr) {
@@ -790,8 +790,8 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 update:
     update_randr_res(x11,
         x11->randr.num_monitors != enabled_monitors(mon_config));
-    x11->width = primary_w;
-    x11->height = primary_h;
+    x11->width[0] = primary_w;
+    x11->height[0] = primary_h;
 
     /* Flush output buffers and consume any pending events (ConfigureNotify) */
     x11->dont_send_guest_xorg_res = 1;
@@ -866,8 +866,8 @@ no_info:
         res = malloc(screen_count * sizeof(*res));
         if (!res)
             goto no_mem;
-        res[0].width  = x11->width;
-        res[0].height = x11->height;
+        res[0].width  = x11->width[0];
+        res[0].height = x11->height[0];
         res[0].x = 0;
         res[0].y = 0;
     }
@@ -878,8 +878,8 @@ no_info:
                    res[i].height, res[i].x, res[i].y);
     }
 
-    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width,
-                x11->height, (uint8_t *)res, screen_count * sizeof(*res));
+    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width[0],
+                x11->height[0], (uint8_t *)res, screen_count * sizeof(*res));
     free(res);
     return;
 no_mem:

@@ -21,6 +21,7 @@
         } \
     } while (0)
 
+#define MAX_SCREENS 16
 /* Same as qxl_dev.h client_monitors_config.heads count */
 #define MONITOR_SIZE_COUNT 64
 
@@ -82,15 +83,14 @@ struct vdagent_x11 {
     Atom targets_atom;
     Atom incr_atom;
     Atom multiple_atom;
-    Window root_window;
+    Window root_window[MAX_SCREENS];
     Window selection_window;
     struct udscs_connection *vdagentd;
     char *net_wm_name;
     int debug;
     int fd;
-    int screen;
-    int width;
-    int height;
+    int width[MAX_SCREENS];
+    int height[MAX_SCREENS];
     int has_xfixes;
     int xfixes_event_base;
     int max_prop_size;

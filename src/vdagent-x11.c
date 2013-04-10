@@ -127,7 +127,7 @@ static void vdagent_x11_get_wm_name(struct vdagent_x11 *x11)
     vdagent_x11_set_error_handler(x11, vdagent_x11_ignore_bad_window_handler);
 
     /* Get the window manager SUPPORTING_WM_CHECK window */
-    if (XGetWindowProperty(x11->display, x11->root_window,
+    if (XGetWindowProperty(x11->display, x11->root_window[0],
             XInternAtom(x11->display, "_NET_SUPPORTING_WM_CHECK", False), 0,
             LONG_MAX, False, XA_WINDOW, &type_ret, &format_ret, &len,
             &remain, &data) == Success) {
@@ -136,7 +136,7 @@ static void vdagent_x11_get_wm_name(struct vdagent_x11 *x11)
         XFree(data);
     }
     if (sup_window == None &&
-        XGetWindowProperty(x11->display, x11->root_window,
+        XGetWindowProperty(x11->display, x11->root_window[0],
             XInternAtom(x11->display, "_WIN_SUPPORTING_WM_CHECK", False), 0,
             LONG_MAX, False, XA_CARDINAL, &type_ret, &format_ret, &len,
             &remain, &data) == Success) {
@@ -201,8 +201,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         XSynchronize(x11->display, True);
     }
 
-    x11->screen = DefaultScreen(x11->display);
-    x11->root_window = RootWindow(x11->display, x11->screen);
+    x11->root_window[0] = RootWindow(x11->display, 0);
     x11->fd = ConnectionNumber(x11->display);
     x11->clipboard_atom = XInternAtom(x11->display, "CLIPBOARD", False);
     x11->clipboard_primary_atom = XInternAtom(x11->display, "PRIMARY", False);
@@ -221,7 +220,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     }
 
     /* We should not store properties (for selections) on the root window */
-    x11->selection_window = XCreateSimpleWindow(x11->display, x11->root_window,
+    x11->selection_window = XCreateSimpleWindow(x11->display, x11->root_window[0],
                                                 0, 0, 1, 1, 0, 0, 0);
     if (x11->debug)
         syslog(LOG_DEBUG, "Selection window: %u", (int)x11->selection_window);
@@ -231,12 +230,12 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     if (XFixesQueryExtension(x11->display, &x11->xfixes_event_base, &i) &&
         XFixesQueryVersion(x11->display, &major, &minor) && major >= 1) {
         x11->has_xfixes = 1;
-        XFixesSelectSelectionInput(x11->display, x11->root_window,
+        XFixesSelectSelectionInput(x11->display, x11->root_window[0],
                                    x11->clipboard_atom,
                                    XFixesSetSelectionOwnerNotifyMask|
                                    XFixesSelectionWindowDestroyNotifyMask|
                                    XFixesSelectionClientCloseNotifyMask);
-        XFixesSelectSelectionInput(x11->display, x11->root_window,
+        XFixesSelectSelectionInput(x11->display, x11->root_window[0],
                                    x11->clipboard_primary_atom,
                                    XFixesSetSelectionOwnerNotifyMask|
                                    XFixesSelectionWindowDestroyNotifyMask|
@@ -255,12 +254,12 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         x11->max_prop_size = 262144;
 
     /* Catch resolution changes */
-    XSelectInput(x11->display, x11->root_window, StructureNotifyMask);
+    XSelectInput(x11->display, x11->root_window[0], StructureNotifyMask);
 
     /* Get the current resolution */
-    XGetWindowAttributes(x11->display, x11->root_window, &attrib);
-    x11->width = attrib.width;
-    x11->height = attrib.height;
+    XGetWindowAttributes(x11->display, x11->root_window[0], &attrib);
+    x11->width[0]  = attrib.width;
+    x11->height[0] = attrib.height;
     vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
 
     /* Get net_wm_name, since we are started at the same time as the wm,
@@ -494,7 +493,7 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
     switch (event.type) {
     case ConfigureNotify:
         // TODO: handle CrtcConfigureNotify, OutputConfigureNotify can be ignored.
-        if (event.xconfigure.window != x11->root_window)
+        if (event.xconfigure.window != x11->root_window[0])
             break;
 
         handled = 1;
