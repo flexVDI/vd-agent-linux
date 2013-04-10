@@ -196,12 +196,22 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
         return NULL;
     }
 
+    x11->screen_count = ScreenCount(x11->display);
+    if (x11->screen_count > MAX_SCREENS) {
+        syslog(LOG_ERR, "Error too much screens: %d > %d",
+               x11->screen_count, MAX_SCREENS);
+        XCloseDisplay(x11->display);
+        free(x11);
+        return NULL;
+    }
+
     if (sync) {
         XSetErrorHandler(vdagent_x11_debug_error_handler);
         XSynchronize(x11->display, True);
     }
 
-    x11->root_window[0] = RootWindow(x11->display, 0);
+    for (i = 0; i < x11->screen_count; i++)
+        x11->root_window[i] = RootWindow(x11->display, i);
     x11->fd = ConnectionNumber(x11->display);
     x11->clipboard_atom = XInternAtom(x11->display, "CLIPBOARD", False);
     x11->clipboard_primary_atom = XInternAtom(x11->display, "PRIMARY", False);
@@ -253,13 +263,15 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     if (x11->max_prop_size > 262144)
         x11->max_prop_size = 262144;
 
-    /* Catch resolution changes */
-    XSelectInput(x11->display, x11->root_window[0], StructureNotifyMask);
+    for (i = 0; i < x11->screen_count; i++) {
+        /* Catch resolution changes */
+        XSelectInput(x11->display, x11->root_window[i], StructureNotifyMask);
 
-    /* Get the current resolution */
-    XGetWindowAttributes(x11->display, x11->root_window[0], &attrib);
-    x11->width[0]  = attrib.width;
-    x11->height[0] = attrib.height;
+        /* Get the current resolution */
+        XGetWindowAttributes(x11->display, x11->root_window[i], &attrib);
+        x11->width[i]  = attrib.width;
+        x11->height[i] = attrib.height;
+    }
     vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
 
     /* Get net_wm_name, since we are started at the same time as the wm,
@@ -443,7 +455,7 @@ static int vdagent_x11_get_clipboard_selection(struct vdagent_x11 *x11,
 
 static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
 {
-    int handled = 0;
+    int i, handled = 0;
     uint8_t selection;
 
     if (event.type == x11->xfixes_event_base) {
@@ -493,11 +505,14 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
     switch (event.type) {
     case ConfigureNotify:
         // TODO: handle CrtcConfigureNotify, OutputConfigureNotify can be ignored.
-        if (event.xconfigure.window != x11->root_window[0])
+        for (i = 0; i < x11->screen_count; i++)
+            if (event.xconfigure.window == x11->root_window[i])
+                break;
+        if (i == x11->screen_count)
             break;
 
         handled = 1;
-        vdagent_x11_randr_handle_root_size_change(x11,
+        vdagent_x11_randr_handle_root_size_change(x11, i,
                 event.xconfigure.width, event.xconfigure.height);
         break;
     case MappingNotify:

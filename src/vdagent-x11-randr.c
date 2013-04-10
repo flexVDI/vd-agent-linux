@@ -123,6 +123,12 @@ void vdagent_x11_randr_init(struct vdagent_x11 *x11)
 {
     int i;
 
+    if (x11->screen_count > 1) {
+        syslog(LOG_WARNING, "X-server has more then 1 screen, "
+               "disabling client -> guest resolution syncing");
+        return;
+    }
+
     if (XRRQueryExtension(x11->display, &i, &i)) {
         XRRQueryVersion(x11->display, &x11->xrandr_major, &x11->xrandr_minor);
         if (x11->xrandr_major == 1 && x11->xrandr_minor >= 3)
@@ -455,18 +461,18 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
 }
 
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
-                                               int width, int height)
+    int screen, int width, int height)
 {
-    if (width == x11->width[0] && height == x11->height[0]) {
+    if (width == x11->width[screen] && height == x11->height[screen]) {
         return;
     }
 
     if (x11->debug)
-        syslog(LOG_DEBUG, "Root size changed to %dx%d send %d",
-               width, height, !x11->dont_send_guest_xorg_res);
+        syslog(LOG_DEBUG, "Root size of screen %d changed to %dx%d send %d",
+              screen,  width, height, !x11->dont_send_guest_xorg_res);
 
-    x11->width[0]  = width;
-    x11->height[0] = height;
+    x11->width[screen]  = width;
+    x11->height[screen] = height;
     if (!x11->dont_send_guest_xorg_res) {
         vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
     }
@@ -809,7 +815,7 @@ exit:
 void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11, int update)
 {
     struct vdagentd_guest_xorg_resolution *res = NULL;
-    int i, screen_count = 0;
+    int i, width = 0, height = 0, screen_count = 0;
 
     if (x11->has_xrandr) {
         VDAgentMonitorsConfig *curr;
@@ -835,6 +841,8 @@ void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11, int update)
             res[i].y = curr->monitors[i].y;
         }
         free(curr);
+        width  = x11->width[0];
+        height = x11->height[0];
     } else if (x11->has_xinerama) {
         XineramaScreenInfo *screen_info = NULL;
 
@@ -860,16 +868,24 @@ void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11, int update)
             res[screen_info[i].screen_number].y = screen_info[i].y_org;
         }
         XFree(screen_info);
+        width  = x11->width[0];
+        height = x11->height[0];
     } else {
 no_info:
-        screen_count = 1;
+        screen_count = x11->screen_count;
         res = malloc(screen_count * sizeof(*res));
         if (!res)
             goto no_mem;
-        res[0].width  = x11->width[0];
-        res[0].height = x11->height[0];
-        res[0].x = 0;
-        res[0].y = 0;
+        for (i = 0; i < screen_count; i++) {
+            res[i].width  = x11->width[i];
+            res[i].height = x11->height[i];
+            /* No way to get screen coordinates, assume rtl order */
+            res[i].x = width;
+            res[i].y = 0;
+            width += x11->width[i];
+            if (x11->height[i] > height)
+                height = x11->height[i];
+        }
     }
 
     if (x11->debug) {
@@ -878,8 +894,8 @@ no_info:
                    res[i].height, res[i].x, res[i].y);
     }
 
-    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, x11->width[0],
-                x11->height[0], (uint8_t *)res, screen_count * sizeof(*res));
+    udscs_write(x11->vdagentd, VDAGENTD_GUEST_XORG_RESOLUTION, width, height,
+                (uint8_t *)res, screen_count * sizeof(*res));
     free(res);
     return;
 no_mem:

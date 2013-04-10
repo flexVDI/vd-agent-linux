@@ -89,6 +89,7 @@ struct vdagent_x11 {
     char *net_wm_name;
     int debug;
     int fd;
+    int screen_count;
     int width[MAX_SCREENS];
     int height[MAX_SCREENS];
     int has_xfixes;
@@ -142,7 +143,7 @@ void vdagent_x11_randr_init(struct vdagent_x11 *x11);
 void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11,
                                             int update);
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
-                                               int width, int height);
+                                            int screen, int width, int height);
 
 void vdagent_x11_set_error_handler(struct vdagent_x11 *x11,
     int (*handler)(Display *, XErrorEvent *));
