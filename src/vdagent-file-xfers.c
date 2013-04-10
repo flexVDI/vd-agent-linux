@@ -38,6 +38,7 @@
 
 #include "vdagentd-proto.h"
 #include "vdagent-file-xfers.h"
+#include "glib-compat.h"
 
 struct vdagent_file_xfers {
     GHashTable *xfers;
