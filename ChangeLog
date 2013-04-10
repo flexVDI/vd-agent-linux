@@ -1,3 +1,13 @@
+spice-vdagent-0.14.0
+--------------------
+* More multi-monitor and arbritary resolution support bugfixes
+* Add support for file transfers from client to guest
+* Add support for setups with multiple Screens (multiple qxl devices each
+  mapped to their own screen), limitations:
+ -Max one monitor per Screen / qxl device
+ -All monitors / Screens must have the same resolution
+ -No client -> guest resolution syncing
+
 spice-vdagent-0.12.1
 --------------------
 * Various bugfixes for multi-monitor and arbritary resolution support
