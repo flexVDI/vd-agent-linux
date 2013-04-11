@@ -7,6 +7,8 @@ spice-vdagent-0.14.0
  -Max one monitor per Screen / qxl device
  -All monitors / Screens must have the same resolution
  -No client -> guest resolution syncing
+* Add spice-vdagent -X cmdline option, which runtime disables console-kit /
+  systemd-logind integration for setups where these are not used
 
 spice-vdagent-0.12.1
 --------------------

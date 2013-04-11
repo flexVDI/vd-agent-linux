@@ -55,6 +55,9 @@ struct session_info *session_info_create(int verbose)
 
 void session_info_destroy(struct session_info *si)
 {
+    if (!si)
+        return;
+
     sd_login_monitor_unref(si->mon);
     free(si->session);
     free(si);

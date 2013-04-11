@@ -25,10 +25,6 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#if defined HAVE_CONSOLE_KIT || defined HAVE_LIBSYSTEMD_LOGIN
-#define HAVE_SESSION_INFO
-#endif
-
 struct session_info;
 
 struct session_info *session_info_create(int verbose);

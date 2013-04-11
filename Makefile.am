@@ -17,9 +17,12 @@ src_spice_vdagentd_SOURCES = src/vdagentd.c \
                              src/udscs.c
 if HAVE_CONSOLE_KIT
 src_spice_vdagentd_SOURCES += src/console-kit.c
-endif
+else
 if HAVE_LIBSYSTEMD_LOGIN
 src_spice_vdagentd_SOURCES += src/systemd-login.c
+else
+src_spice_vdagentd_SOURCES += src/dummy-session-info.c
+endif
 endif
 
 noinst_HEADERS = src/session-info.h \

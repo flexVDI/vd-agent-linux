@@ -60,18 +60,13 @@ static int debug = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
 static GHashTable *active_xfers = NULL;
-#ifdef HAVE_SESSION_INFO
 static struct session_info *session_info = NULL;
-#endif
 static struct vdagentd_uinput *uinput = NULL;
 static VDAgentMonitorsConfig *mon_config = NULL;
 static uint32_t *capabilities = NULL;
 static int capabilities_size = 0;
-#ifdef HAVE_SESSION_INFO
 static const char *active_session = NULL;
-#else
 static unsigned int session_count = 0;
-#endif
 static struct udscs_connection *active_session_conn = NULL;
 static int agent_owns_clipboard[256] = { 0, };
 static int quit = 0;
@@ -530,7 +525,6 @@ static void check_xorg_resolution(void)
     }
 }
 
-#ifdef HAVE_SESSION_INFO
 static int connection_matches_active_session(struct udscs_connection **connp,
     void *priv)
 {
@@ -546,7 +540,6 @@ static int connection_matches_active_session(struct udscs_connection **connp,
     *conn_ret = *connp;
     return 1;
 }
-#endif
 
 void release_clipboards(void)
 {
@@ -561,18 +554,27 @@ void release_clipboards(void)
     }
 }
 
-void update_active_session_connection(void)
+void update_active_session_connection(struct udscs_connection *new_conn)
 {
-#ifdef HAVE_SESSION_INFO
-    int n;
-    struct udscs_connection *new_conn = NULL;
-    if (!active_session)
-        active_session = session_info_get_active_session(session_info);
-
-    n = udscs_server_for_all_clients(server, connection_matches_active_session,
-                                     (void*)&new_conn);
-    if (n != 1)
+    if (session_info) {
         new_conn = NULL;
+        if (!active_session)
+            active_session = session_info_get_active_session(session_info);
+        session_count = udscs_server_for_all_clients(server,
+                                         connection_matches_active_session,
+                                         (void*)&new_conn);
+    } else {
+        if (new_conn)
+            session_count++;
+        else
+            session_count--;
+    }
+
+    if (new_conn && session_count != 1) {
+        syslog(LOG_ERR, "multiple agents in one session, "
+               "disabling agent to avoid potential information leak");
+        new_conn = NULL;
+    }
 
     if (new_conn == active_session_conn)
         return;
@@ -584,7 +586,6 @@ void update_active_session_connection(void)
         udscs_write(active_session_conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
                     (uint8_t *)mon_config, sizeof(VDAgentMonitorsConfig) +
                     mon_config->num_of_monitors * sizeof(VDAgentMonConfig));
-#endif
 
     release_clipboards();
 
@@ -603,9 +604,6 @@ gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
 
 void agent_connect(struct udscs_connection *conn)
 {
-#ifdef HAVE_SESSION_INFO
-    uint32_t pid;
-#endif
     struct agent_data *agent_data;
 
     agent_data = calloc(1, sizeof(*agent_data));
@@ -614,28 +612,16 @@ void agent_connect(struct udscs_connection *conn)
         udscs_destroy_connection(&conn);
         return;
     }
-#ifdef HAVE_SESSION_INFO
-    pid = udscs_get_peer_cred(conn).pid;
-    agent_data->session = session_info_session_for_pid(session_info, pid);
-#else
-    session_count++;
-    if (session_count == 1) {
-        active_session_conn = conn;
-    } else {
-        /* disable communication with agents when we've got multiple
-         * connections to the vdagentd and no consolekit since we can't
-         * know to which one we should send data
-         */
-        syslog(LOG_ERR, "Trying to use multiple vdagent without ConsoleKit, "
-               "disabling vdagent to avoid potential information leak");
-        active_session_conn = NULL;
+
+    if (session_info) {
+        uint32_t pid = udscs_get_peer_cred(conn).pid;
+        agent_data->session = session_info_session_for_pid(session_info, pid);
     }
-#endif
 
     udscs_set_user_data(conn, (void *)agent_data);
     udscs_write(conn, VDAGENTD_VERSION, 0, 0,
                 (uint8_t *)VERSION, strlen(VERSION) + 1);
-    update_active_session_connection();
+    update_active_session_connection(conn);
 }
 
 void agent_disconnect(struct udscs_connection *conn)
@@ -644,19 +630,11 @@ void agent_disconnect(struct udscs_connection *conn)
 
     g_hash_table_foreach_remove(active_xfers, remove_active_xfers, conn);
 
-#ifndef HAVE_SESSION_INFO
-    if (conn == active_session_conn)
-        active_session_conn = NULL;
-#endif
-
     free(agent_data->session);
     agent_data->session = NULL;
-    update_active_session_connection();
+    update_active_session_connection(NULL);
 
     free(agent_data);
-#ifndef HAVE_SESSION_INFO
-    session_count--;
-#endif
 }
 
 void agent_read_complete(struct udscs_connection **connp,
@@ -745,8 +723,14 @@ static void usage(FILE *fp)
             "  -d         log debug messages (use twice for extra info)\n"
             "  -s <port>  set virtio serial port  [%s]\n"
             "  -u <dev>   set uinput device       [%s]\n"
-            "  -x         don't daemonize\n",
-            portdev, uinput_device);
+            "  -x         don't daemonize\n"
+#ifdef HAVE_CONSOLE_KIT
+            "  -X         Disable console kit integration\n"
+#endif
+#ifdef HAVE_LIBSYSTEMD_LOGIN
+            "  -X         Disable systemd-logind integration\n"
+#endif
+            ,portdev, uinput_device);
 }
 
 void daemonize(void)
@@ -779,9 +763,7 @@ void main_loop(void)
 {
     fd_set readfds, writefds;
     int n, nfds;
-#ifdef HAVE_SESSION_INFO
     int ck_fd = 0;
-#endif
 
     while (!quit) {
         FD_ZERO(&readfds);
@@ -792,12 +774,12 @@ void main_loop(void)
         if (n >= nfds)
             nfds = n + 1;
 
-#ifdef HAVE_SESSION_INFO
-        ck_fd = session_info_get_fd(session_info);
-        FD_SET(ck_fd, &readfds);
-        if (ck_fd >= nfds)
-            nfds = ck_fd + 1;
-#endif
+        if (session_info) {
+            ck_fd = session_info_get_fd(session_info);
+            FD_SET(ck_fd, &readfds);
+            if (ck_fd >= nfds)
+                nfds = ck_fd + 1;
+        }
 
         n = select(nfds, &readfds, &writefds, NULL, NULL);
         if (n == -1) {
@@ -830,12 +812,10 @@ void main_loop(void)
             }
         }
 
-#ifdef HAVE_SESSION_INFO
-        if (FD_ISSET(ck_fd, &readfds)) {
+        if (session_info && FD_ISSET(ck_fd, &readfds)) {
             active_session = session_info_get_active_session(session_info);
-            update_active_session_connection();
+            update_active_session_connection(NULL);
         }
-#endif
     }
 }
 
@@ -848,10 +828,11 @@ int main(int argc, char *argv[])
 {
     int c;
     int do_daemonize = 1;
+    int want_session_info = 1;
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dhxs:u:")))
+        if (-1 == (c = getopt(argc, argv, "-dhxXs:u:")))
             break;
         switch (c) {
         case 'd':
@@ -865,6 +846,9 @@ int main(int argc, char *argv[])
             break;
         case 'x':
             do_daemonize = 0;
+            break;
+        case 'X':
+            want_session_info = 0;
             break;
         case 'h':
             usage(stdout);
@@ -914,15 +898,10 @@ int main(int argc, char *argv[])
     }
 #endif
 
-#ifdef HAVE_SESSION_INFO
-    session_info = session_info_create(debug);
-    if (!session_info) {
-        syslog(LOG_CRIT, "Fatal could not get session information");
-        vdagentd_uinput_destroy(&uinput);
-        udscs_destroy_server(server);
-        return 1;
-    }
-#endif
+    if (want_session_info)
+        session_info = session_info_create(debug);
+    if (!session_info)
+        syslog(LOG_WARNING, "no session info, max 1 session agent allowed");
 
     active_xfers = g_hash_table_new(g_direct_hash, g_direct_equal);
     main_loop();
@@ -932,9 +911,7 @@ int main(int argc, char *argv[])
     vdagentd_uinput_destroy(&uinput);
     vdagent_virtio_port_flush(&virtio_port);
     vdagent_virtio_port_destroy(&virtio_port);
-#ifdef HAVE_SESSION_INFO
     session_info_destroy(session_info);
-#endif
     udscs_destroy_server(server);
     if (unlink(VDAGENTD_SOCKET) != 0)
         syslog(LOG_ERR, "unlink %s: %s", VDAGENTD_SOCKET, strerror(errno));
