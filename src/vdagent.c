@@ -131,15 +131,16 @@ int client_setup(int reconnect)
 static void usage(FILE *fp)
 {
     fprintf(fp,
-      "vdagent -- spice agent xorg client\n"
-      "options:\n"
+      "Usage: spice-vdagent [OPTIONS]\n\n"
+      "Spice guest agent X11 session agent.\n\n"
+      "Options:\n"
       "  -h                                print this text\n"
       "  -d                                log debug messages\n"
-      "  -s <port>                         set virtio serial port [%s]\n"
+      "  -s <port>                         set virtio serial port\n"
       "  -x                                don't daemonize\n"
       "  -f <dir|xdg-desktop|xdg-download> file xfer save dir\n"
-      "  -o <0:1>                          open dir on file xfer completion\n",
-      portdev);
+      "  -o <0:1>                          open dir on file xfer completion\n"
+      );
 }
 
 static void quit_handler(int sig)
@@ -207,6 +208,7 @@ int main(int argc, char *argv[])
             fx_open_dir = atoi(optarg);
             break;
         default:
+            fputs("\n", stderr);
             usage(stderr);
             return 1;
         }

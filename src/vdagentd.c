@@ -717,8 +717,9 @@ void agent_read_complete(struct udscs_connection **connp,
 static void usage(FILE *fp)
 {
     fprintf(fp,
-            "vdagentd\n"
-            "options:\n"
+            "Usage: spice-vdagentd [OPTIONS]\n\n"
+            "Spice guest agent daemon.\n\n"
+            "Options:\n"
             "  -h         print this text\n"
             "  -d         log debug messages (use twice for extra info)\n"
             "  -s <port>  set virtio serial port  [%s]\n"
@@ -854,6 +855,7 @@ int main(int argc, char *argv[])
             usage(stdout);
             return 0;
         default:
+            fputs("\n", stderr);
             usage(stderr);
             return 1;
         }
