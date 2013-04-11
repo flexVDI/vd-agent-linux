@@ -116,6 +116,7 @@ void vdagentd_write_xorg_conf(VDAgentMonitorsConfig *monitor_conf)
         FPRINTF("\tDriver\t\t\"qxl\"\n");
         FPRINTF("\tBusID\t\t\"PCI:%02d:%02d:%d\"\n",
                 dev->bus, dev->dev, dev->func);
+        FPRINTF("\tOption\t\t\"NumHeads\"\t\"1\"\n");
         FPRINTF("EndSection\n\n");
     } while ((dev = pci_device_next(it)));
 
