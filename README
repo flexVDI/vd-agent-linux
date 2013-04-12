@@ -3,13 +3,14 @@ Spice agent for Linux
 
 The spice agent for Linux consists of 2 parts, a daemon spice-vdagentd and
 a per X-session process spice-vdagent. The daemon gets started in Spice guests
-through a Sys-V initscript. The per X-session gets automatically started in
-desktop environments which honor /etc/xdg/autostart, and under gdm.
+through a Sys-V initscript or a systemd unit. The per X-session gets
+automatically started in desktop environments which honor /etc/xdg/autostart,
+and under gdm.
 
-The main daemon needs to know which X-session daemon is the currently
-active X-session (think switch user functionality) for this console kit is
-used. spice-vdagent can be compiled without console kit support for use with
-older distributions, in this case only one active X session is allowed.
+The main daemon needs to know which X-session daemon is in the currently
+active X-session (think switch user functionality) for this console kit or
+systemd-logind (compile time option) is used. If no session info is
+available only one X-session agent is allowed.
 
 Features:
 * Client mouse mode (no need to grab mouse by client, no mouse lag)
@@ -17,7 +18,6 @@ Features:
   via uinput. This will only work if the active X-session is running a
   spice-vdagent process so that its resolution can be determined.
 * Automatic adjustment of the X-session resolution to the client resolution
-  for single monitor configurations.
 * Support of copy and paste (text and images) between the active X-session
   and the client. This supports both the primary selection and the clipboard.
 * Support for transfering files from the client to the agent
