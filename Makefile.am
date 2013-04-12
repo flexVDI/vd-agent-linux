@@ -25,15 +25,17 @@ src_spice_vdagentd_SOURCES += src/dummy-session-info.c
 endif
 endif
 
-noinst_HEADERS = src/session-info.h \
-                 src/vdagentd-proto-strings.h \
+noinst_HEADERS = src/glib-compat.h \
+                 src/session-info.h \
+                 src/udscs.h \
+                 src/vdagent-file-xfers.h \
+                 src/vdagent-virtio-port.h \
                  src/vdagent-x11.h \
                  src/vdagent-x11-priv.h \
-                 src/udscs.h \
-                 src/vdagentd-uinput.h \
-                 src/vdagentd-xorg-conf.h \
                  src/vdagentd-proto.h \
-                 src/vdagent-virtio-port.h
+                 src/vdagentd-proto-strings.h \
+                 src/vdagentd-uinput.h \
+                 src/vdagentd-xorg-conf.h
 
 xdgautostartdir = $(sysconfdir)/xdg/autostart
 xdgautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
