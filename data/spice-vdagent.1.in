@@ -1,0 +1,60 @@
+.TH spice-vdagent "1" "April 2013" "@PACKAGE_STRING@"
+.SH NAME
+spice-vdagent \- Spice guest agent X11 session agent
+.SH SYNOPSIS
+\fBspice-vdagent\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+The spice guest agent for Linux consists of 2 parts, a system wide daemon
+\fBspice-vdagentd\fR and a X11 session agent \fBspice-vdagent\fR of which
+there is one per X11 session.
+.br
+\fBspice-vdagent\fR gets automatically started in desktop environments which
+honor /etc/xdg/autostart, and under gdm.
+.SH FEATURES
+The spice guest agent adds the following features to spice Linux guests:
+.P
+Client mouse mode (no need to grab mouse by client, no mouse lag)
+.P
+Automatic adjustment of the X11 session's number of virtual monitors, and their
+resolution, to the number of client windows and their resolution
+.P
+Support of copy and paste (text and images) between the active X11 session
+and the client, this supports both the primary selection and the clipboard
+.P
+Support for transfering files from the client to the agent
+.SH OPTIONS
+.TP
+\fB-h\fP
+Print a short description of all command line options
+.TP
+\fB-d\fP
+Log debug messages
+.TP
+\fB-s\fP \fIport\fR
+Set virtio serial \fIport\fR (default: /dev/virtio-ports/com.redhat.spice.0)
+.TP
+\fB-x\fP
+Don't daemonize
+.TP
+\fB-f\fP \fIdir|xdg-desktop|xdg-download\fR
+Set directory where to save files send from the client, this can be either
+an arbitrary \fIdir\fR or one of the special values of \fIxdg-desktop\fR or
+\fIxdg-download\fR to select the default xdg Desktop resp. xdg Download
+directory. If no value is specified the default is \fIxdg-desktop\fR when
+running under a Desktop Environment which has icons on the desktop and
+\fIxdg-download\fR under other Desktop Environments
+.TP
+\fB-o\fP \fI0|1\fR
+Disable/enable opening the file save directory with xdg-open (showing the
+directory in the file manager) when a file transfer from the client
+completes. If no value is specified the default is \fI0\fR when running under
+a Desktop Environment which has icons on the desktop and \fI1\fR under other
+Desktop Environments
+.SH SEE ALSO
+\fBspice-vdagentd\fR(1)
+.SH COPYRIGHT
+Copyright 2010-2013 Red Hat, Inc. License GPLv3+: GNU GPL version 3 or later
+<http://gnu.org/licenses/gpl.html>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.

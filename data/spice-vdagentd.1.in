@@ -1,0 +1,60 @@
+.TH spice-vdagentd "1" "April 2013" "@PACKAGE_STRING@"
+.SH NAME
+spice-vdagentd \- Spice guest agent daemon
+.SH SYNOPSIS
+\fBspice-vdagent\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+The spice guest agent for Linux consists of 2 parts, a system wide daemon
+\fBspice-vdagentd\fR and a X11 session agent \fBspice-vdagent\fR of which
+there is one per X11 session.
+.br
+\fBspice-vdagentd\fR gets started through a Sys-V initscript or a systemd unit.
+.SH FEATURES
+The spice guest agent adds the following features to spice Linux guests:
+.P
+Client mouse mode (no need to grab mouse by client, no mouse lag)
+.P
+Automatic adjustment of the X11 session's number of virtual monitors, and their
+resolution, to the number of client windows and their resolution
+.P
+Support of copy and paste (text and images) between the active X11 session
+and the client, this supports both the primary selection and the clipboard
+.P
+Support for transfering files from the client to the agent
+.SH OPTIONS
+.TP
+\fB-h\fP
+Print a short description of all command line options
+.TP
+\fB-d\fP
+Log debug messages (use twice for extra info)
+.TP
+\fB-s\fP \fIport\fR
+Set virtio serial \fIport\fR (default: /dev/virtio-ports/com.redhat.spice.0)
+.TP
+\fB-u\fP \fIdevice\fR
+Set uinput \fIdevice\fR (default: /dev/uinput)
+.TP
+\fB-x\fP
+Don't daemonize
+.TP
+\fB-X\fP
+Disable session info usage, \fBspice-vdagentd\fR needs to know which
+\fBspice-vdagent\fR is in the currently active X11 session.
+\fBspice-vdagentd\fR uses console kit or systemd-logind (compile time option)
+for this; The \fB-X\fP option disables this, if no session info is available
+only one \fBspice-vdagent\fR is allowed
+.SH FILES
+The Sys-V initscript or systemd unit parses the following files:
+.TP
+/etc/sysconfig/spice-vdagentd
+Default cmdline options can be passed to \fBspice-vdagentd\fR by setting
+them in the \fISPICE_VDAGENTD_EXTRA_ARGS\fR variable in this file
+.SH SEE ALSO
+\fBspice-vdagent\fR(1)
+.SH COPYRIGHT
+Copyright 2010-2013 Red Hat, Inc. License GPLv3+: GNU GPL version 3 or later
+<http://gnu.org/licenses/gpl.html>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.

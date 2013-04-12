@@ -9,6 +9,7 @@ spice-vdagent-0.14.0
  -No client -> guest resolution syncing
 * Add spice-vdagent -X cmdline option, which runtime disables console-kit /
   systemd-logind integration for setups where these are not used
+* Add manpages for spice-vdagent and spice-vdagentd
 
 spice-vdagent-0.12.1
 --------------------

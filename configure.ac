@@ -143,6 +143,8 @@ fi
 
 AC_CONFIG_FILES([
 Makefile
+data/spice-vdagent.1
+data/spice-vdagentd.1
 ])
 AC_OUTPUT
 

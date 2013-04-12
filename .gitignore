@@ -1,4 +1,5 @@
 *~
+data/spice-vdagent*.1
 src/config.h
 src/config.h.in
 src/spice-vdagent

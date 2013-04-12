@@ -68,6 +68,10 @@ modulesdir = $(sysconfdir)/modules-load.d
 modules_DATA = $(top_srcdir)/data/modules-load.d/spice-vdagentd.conf
 endif
 
+manpagedir = $(mandir)/man1
+manpage_DATA = $(top_srcdir)/data/spice-vdagent.1	\
+               $(top_srcdir)/data/spice-vdagentd.1
+
 EXTRA_DIST =					\
 	README.RHEL-5				\
 	data/70-spice-vdagentd.rules		\
