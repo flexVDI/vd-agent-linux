@@ -139,7 +139,7 @@ static void usage(FILE *fp)
       "  -s <port>                         set virtio serial port\n"
       "  -x                                don't daemonize\n"
       "  -f <dir|xdg-desktop|xdg-download> file xfer save dir\n"
-      "  -o <0:1>                          open dir on file xfer completion\n"
+      "  -o <0|1>                          open dir on file xfer completion\n"
       );
 }
 
