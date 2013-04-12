@@ -185,7 +185,7 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
 
     if (!active_session_conn) {
         syslog(LOG_WARNING,
-               "Could not find an agent connnection belonging to the "
+               "Could not find an agent connection belonging to the "
                "active session, ignoring client clipboard request");
         return;
     }
