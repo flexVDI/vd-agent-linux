@@ -1,6 +1,9 @@
 *~
+src/config.h
+src/config.h.in
 src/spice-vdagent
 src/spice-vdagentd
+src/stamp-h1
 src/*.o
 src/.deps
 src/.dirstamp
@@ -8,6 +11,7 @@ config.log
 config.status
 aclocal.m4
 autom4te.cache
+compile
 configure
 depcomp
 install-sh
