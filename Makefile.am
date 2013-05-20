@@ -65,9 +65,6 @@ udevrules_DATA = $(top_srcdir)/data/70-spice-vdagentd.rules
 
 tmpfilesdir = $(prefix)/lib/tmpfiles.d
 tmpfiles_DATA = $(top_srcdir)/data/tmpfiles.d/spice-vdagentd.conf
-
-modulesdir = $(sysconfdir)/modules-load.d
-modules_DATA = $(top_srcdir)/data/modules-load.d/spice-vdagentd.conf
 endif
 
 manpagedir = $(mandir)/man1
@@ -77,7 +74,6 @@ manpage_DATA = data/spice-vdagent.1	\
 EXTRA_DIST =					\
 	README.RHEL-5				\
 	data/70-spice-vdagentd.rules		\
-	data/modules-load.d/spice-vdagentd.conf	\
 	data/rsyslog.d/spice-vdagentd.conf	\
 	data/spice-vdagent.desktop		\
 	data/spice-vdagentd			\
