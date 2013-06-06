@@ -718,7 +718,7 @@ static void usage(FILE *fp)
 {
     fprintf(fp,
             "Usage: spice-vdagentd [OPTIONS]\n\n"
-            "Spice guest agent daemon.\n\n"
+            "Spice guest agent daemon, version %s.\n\n"
             "Options:\n"
             "  -h         print this text\n"
             "  -d         log debug messages (use twice for extra info)\n"
@@ -731,7 +731,7 @@ static void usage(FILE *fp)
 #ifdef HAVE_LIBSYSTEMD_LOGIN
             "  -X         Disable systemd-logind integration\n"
 #endif
-            ,portdev, uinput_device);
+            ,VERSION, portdev, uinput_device);
 }
 
 void daemonize(void)
