@@ -226,9 +226,7 @@ int main(int argc, char *argv[])
             LOG_USER);
 
     if (file_test(portdev) != 0) {
-        syslog(LOG_ERR, "Missing virtio device '%s': %s",
-                portdev, strerror(errno));
-        return 1;
+        return 0;
     }
 
     if (do_daemonize)
