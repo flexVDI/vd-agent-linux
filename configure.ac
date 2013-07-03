@@ -141,6 +141,37 @@ if test "$ac_test_CFLAGS" != set; then
   done
 fi
 
+AC_ARG_ENABLE([pie],
+  AS_HELP_STRING([--enable-pie=@<:@auto/yes/no@:>@],
+                 [Enable position-independent-executable support (for spice-vdagentd)@<:@default=auto@:>@]),
+  [],
+  [enable_pie="auto"])
+
+if test "x$enable_pie" != "xno"; then
+  save_CFLAGS="$CFLAGS"
+  save_LDFLAGS="$LDFLAGS"
+  CFLAGS="$CFLAGS -fPIE"
+  LDFLAGS="$LDFLAGS -pie -Wl,-z,relro -Wl,-z,now"
+  AC_MSG_CHECKING([for PIE support])
+  AC_LINK_IFELSE([AC_LANG_SOURCE([int main () { return 0; }])],
+                 [have_pie=yes],
+                 [have_pie=no])
+  AC_MSG_RESULT([$have_pie])
+  if test "x$have_pie" = "xno" && test "x$enable_pie" = "xyes"; then
+    AC_MSG_ERROR([pie support explicitly requested, but your toolchain does not support it])
+  fi
+  if test "x$have_pie" = "xyes"; then
+    PIE_CFLAGS="-fPIE"
+    PIE_LDFLAGS="-pie -Wl,-z,relro -Wl,-z,now"
+    AC_SUBST(PIE_CFLAGS)
+    AC_SUBST(PIE_LDFLAGS)
+  fi
+  CFLAGS="$save_CFLAGS"
+  LDFLAGS="$save_LDFLAGS"
+else
+  have_pie=no
+fi
+
 AC_CONFIG_FILES([
 Makefile
 data/spice-vdagent.1
@@ -160,6 +191,7 @@ AC_MSG_NOTICE([
         session-info:             ${with_session_info}
         pciaccess:                ${enable_pciaccess}
         static uinput:            ${enable_static_uinput}
+        vdagentd pie + relro:     ${have_pie}
 
         install RH initscript:    ${init_redhat}
         install systemd service:  ${init_systemd}
