@@ -43,6 +43,7 @@
 #include "vdagent-file-xfers.h"
 
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
+static const char *vdagentd_socket = VDAGENTD_SOCKET;
 static int debug = 0;
 static const char *fx_dir = NULL;
 static int fx_open_dir = -1;
@@ -117,7 +118,7 @@ void daemon_read_complete(struct udscs_connection **connp,
 int client_setup(int reconnect)
 {
     while (!quit) {
-        client = udscs_connect(VDAGENTD_SOCKET, daemon_read_complete, NULL,
+        client = udscs_connect(vdagentd_socket, daemon_read_complete, NULL,
                                vdagentd_messages, VDAGENTD_NO_MESSAGES,
                                debug);
         if (client || !reconnect || quit) {
@@ -137,6 +138,7 @@ static void usage(FILE *fp)
       "  -h                                print this text\n"
       "  -d                                log debug messages\n"
       "  -s <port>                         set virtio serial port\n"
+      "  -S <filename>                     set udcs socket\n"
       "  -x                                don't daemonize\n"
       "  -f <dir|xdg-desktop|xdg-download> file xfer save dir\n"
       "  -o <0|1>                          open dir on file xfer completion\n",
@@ -183,7 +185,7 @@ int main(int argc, char *argv[])
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dxhys:f:o:")))
+        if (-1 == (c = getopt(argc, argv, "-dxhys:f:o:S:")))
             break;
         switch (c) {
         case 'd':
@@ -206,6 +208,9 @@ int main(int argc, char *argv[])
             break;
         case 'o':
             fx_open_dir = atoi(optarg);
+            break;
+        case 'S':
+            vdagentd_socket = optarg;
             break;
         default:
             fputs("\n", stderr);
