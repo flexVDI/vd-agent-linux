@@ -19,8 +19,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __VDAGENT_H
-#define __VDAGENT_H
+#ifndef __VDAGENT_X11_H
+#define __VDAGENT_X11_H
 
 #include <stdio.h>
 #include <spice/vd_agent.h>
