@@ -832,6 +832,8 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     selection = x11->conversion_req->selection;
     type = vdagent_x11_target_to_type(x11, selection,
                                       x11->conversion_req->target);
+    if (type == VD_AGENT_CLIPBOARD_NONE)
+        syslog(LOG_ERR, "internal error conversion_req has bad target");
     if (len == 0) { /* No errors so far */
         len = vdagent_x11_get_selection(x11, event, selection,
                                         x11->conversion_req->target,
@@ -1041,6 +1043,7 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
     type = vdagent_x11_target_to_type(x11, selection,
                                       event->xselectionrequest.target);
     if (type == VD_AGENT_CLIPBOARD_NONE) {
+        syslog(LOG_ERR, "guest app requested a non-advertised target");
         vdagent_x11_send_selection_notify(x11, None, NULL);
         return;
     }
