@@ -760,8 +760,8 @@ static uint32_t vdagent_x11_target_to_type(struct vdagent_x11 *x11,
         }
     }
 
-    SELPRINTF("unexpected selection type %s",
-              vdagent_x11_get_atom_name(x11, target));
+    VSELPRINTF("unexpected selection type %s",
+               vdagent_x11_get_atom_name(x11, target));
     return VD_AGENT_CLIPBOARD_NONE;
 }
 
@@ -833,7 +833,8 @@ static void vdagent_x11_handle_selection_notify(struct vdagent_x11 *x11,
     type = vdagent_x11_target_to_type(x11, selection,
                                       x11->conversion_req->target);
     if (type == VD_AGENT_CLIPBOARD_NONE)
-        syslog(LOG_ERR, "internal error conversion_req has bad target");
+        SELPRINTF("internal error conversion_req has bad target %s",
+                  vdagent_x11_get_atom_name(x11, x11->conversion_req->target));
     if (len == 0) { /* No errors so far */
         len = vdagent_x11_get_selection(x11, event, selection,
                                         x11->conversion_req->target,
@@ -1043,7 +1044,7 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
     type = vdagent_x11_target_to_type(x11, selection,
                                       event->xselectionrequest.target);
     if (type == VD_AGENT_CLIPBOARD_NONE) {
-        syslog(LOG_ERR, "guest app requested a non-advertised target");
+        VSELPRINTF("guest app requested a non-advertised target");
         vdagent_x11_send_selection_notify(x11, None, NULL);
         return;
     }
@@ -1284,7 +1285,7 @@ void vdagent_x11_clipboard_release(struct vdagent_x11 *x11, uint8_t selection)
     }
 
     if (x11->clipboard_owner[selection] != owner_client) {
-        SELPRINTF("received release while not owning client clipboard");
+        VSELPRINTF("received release while not owning client clipboard");
         return;
     }
 
