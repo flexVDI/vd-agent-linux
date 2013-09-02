@@ -30,7 +30,7 @@ struct vdagentd_uinput;
 struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
     int width, int height,
     struct vdagentd_guest_xorg_resolution *screen_info, int screen_count,
-    int debug);
+    int debug, int fake);
 void vdagentd_uinput_destroy(struct vdagentd_uinput **uinputp);
 
 void vdagentd_uinput_do_mouse(struct vdagentd_uinput **uinputp,

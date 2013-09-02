@@ -58,6 +58,7 @@ static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
 static const char *vdagentd_socket = VDAGENTD_SOCKET;
 static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
+static int uinput_fake = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
 static GHashTable *active_xfers = NULL;
@@ -317,7 +318,8 @@ int virtio_port_read_complete(
                                                 agent_data->height,
                                                 agent_data->screen_info,
                                                 agent_data->screen_count,
-                                                debug > 1);
+                                                debug > 1,
+                                                uinput_fake);
             if (!uinput) {
                 syslog(LOG_CRIT, "Fatal uinput error");
                 retval = 1;
@@ -488,7 +490,8 @@ static void check_xorg_resolution(void)
                                             agent_data->height,
                                             agent_data->screen_info,
                                             agent_data->screen_count,
-                                            debug > 1);
+                                            debug > 1,
+                                            uinput_fake);
         else
             vdagentd_uinput_update_size(&uinput,
                                         agent_data->width,
@@ -867,6 +870,11 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (strncmp(uinput_device, "/dev", 4) != 0) {
+        syslog(LOG_INFO, "using fake uinput");
+        uinput_fake = 1;
+    }
+
     memset(&act, 0, sizeof(act));
     act.sa_flags = SA_RESTART;
     act.sa_handler = quit_handler;
@@ -899,7 +907,7 @@ int main(int argc, char *argv[])
 
 #ifdef WITH_STATIC_UINPUT
     uinput = vdagentd_uinput_create(uinput_device, 1024, 768, NULL, 0,
-                                    debug > 1);
+                                    debug > 1, uinput_fake);
     if (!uinput) {
         udscs_destroy_server(server);
         return 1;

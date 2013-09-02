@@ -42,12 +42,13 @@ struct vdagentd_uinput {
     struct vdagentd_guest_xorg_resolution *screen_info;
     int screen_count;
     VDAgentMouseState last;
+    int fake;
 };
 
 struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
     int width, int height,
     struct vdagentd_guest_xorg_resolution *screen_info, int screen_count,
-    int debug)
+    int debug, int fake)
 {
     struct vdagentd_uinput *uinput;
 
@@ -58,6 +59,7 @@ struct vdagentd_uinput *vdagentd_uinput_create(const char *devname,
     uinput->devname = devname;
     uinput->fd      = -1; /* Gets opened by vdagentd_uinput_update_size() */
     uinput->debug   = debug;
+    uinput->fake    = fake;
 
     vdagentd_uinput_update_size(&uinput, width, height,
                                 screen_info, screen_count);
@@ -119,10 +121,15 @@ void vdagentd_uinput_update_size(struct vdagentd_uinput **uinputp,
         return;
 #endif
 
-    uinput->fd = open(uinput->devname, O_RDWR);
+    uinput->fd = open(uinput->devname, uinput->fake ? O_WRONLY : O_RDWR);
     if (uinput->fd == -1) {
         syslog(LOG_ERR, "open %s: %m", uinput->devname);
         vdagentd_uinput_destroy(uinputp);
+        return;
+    }
+
+    if (uinput->fake) {
+        /* fake device doesn't understand any ioctls and only writes events */
         return;
     }
 
