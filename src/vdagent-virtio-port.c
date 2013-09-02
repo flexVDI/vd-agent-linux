@@ -26,6 +26,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include "vdagent-virtio-port.h"
 
 #define VDP_LAST_PORT VDP_SERVER_PORT
@@ -51,6 +54,7 @@ struct vdagent_virtio_port_chunk_port_data {
 struct vdagent_virtio_port {
     int fd;
     int opening;
+    int is_uds;
 
     /* Chunk read stuff, single buffer, separate header and data buffer */
     int chunk_header_read;
@@ -78,6 +82,8 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
     vdagent_virtio_port_disconnect_callback disconnect_callback)
 {
     struct vdagent_virtio_port *vport;
+    struct sockaddr_un address;
+    int c;
 
     vport = calloc(1, sizeof(*vport));
     if (!vport)
@@ -85,16 +91,33 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
 
     vport->fd = open(portname, O_RDWR);
     if (vport->fd == -1) {
-        syslog(LOG_ERR, "open %s: %m", portname);
-        free(vport);
-        return NULL;
-    }    
+        syslog(LOG_INFO, "open %s: %m; trying as socket", portname);
+        vport->fd = socket(PF_UNIX, SOCK_STREAM, 0);
+        if (vport->fd == -1) {
+            goto error;
+        }
+        address.sun_family = AF_UNIX;
+        snprintf(address.sun_path, sizeof(address.sun_path), "%s", portname);
+        c = connect(vport->fd, (struct sockaddr *)&address, sizeof(address));
+        if (c == 0) {
+            vport->is_uds = 1;
+        } else {
+            goto error;
+        }
+    } else {
+        vport->is_uds = 0;
+    }
     vport->opening = 1;
 
     vport->read_callback = read_callback;
     vport->disconnect_callback = disconnect_callback;
 
     return vport;
+
+error:
+    syslog(LOG_ERR, "open %s: %m", portname);
+    free(vport);
+    return NULL;
 }
 
 void vdagent_virtio_port_destroy(struct vdagent_virtio_port **vportp)
@@ -333,6 +356,15 @@ static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **vportp)
     }
 }
 
+static int vport_read(struct vdagent_virtio_port *vport, char *buf, int len)
+{
+    if (vport->is_uds) {
+        return recv(vport->fd, buf, len, 0);
+    } else {
+        return read(vport->fd, buf, len);
+    }
+}
+
 static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
 {
     ssize_t n;
@@ -348,7 +380,7 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
         dest = vport->chunk_data + vport->chunk_data_pos;
     }
 
-    n = read(vport->fd, dest, to_read);
+    n = vport_read(vport, dest, to_read);
     if (n < 0) {
         if (errno == EINTR)
             return;
@@ -412,6 +444,15 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
     }
 }
 
+static int vport_write(struct vdagent_virtio_port *vport, char *buf, int len)
+{
+    if (vport->is_uds) {
+        return send(vport->fd, buf, len, 0);
+    } else {
+        return write(vport->fd, buf, len);
+    }
+}
+
 static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **vportp)
 {
     ssize_t n;
@@ -430,7 +471,7 @@ static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **vportp)
     }
 
     to_write = wbuf->size - wbuf->pos;
-    n = write(vport->fd, wbuf->buf + wbuf->pos, to_write);
+    n = vport_write(vport, wbuf->buf + wbuf->pos, to_write);
     if (n < 0) {
         if (errno == EINTR)
             return;
