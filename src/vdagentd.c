@@ -55,6 +55,7 @@ struct agent_data {
 /* variables */
 static const char *pidfilename = "/var/run/spice-vdagentd/spice-vdagentd.pid";
 static const char *portdev = "/dev/virtio-ports/com.redhat.spice.0";
+static const char *vdagentd_socket = VDAGENTD_SOCKET;
 static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
 static struct udscs_server *server = NULL;
@@ -721,18 +722,19 @@ static void usage(FILE *fp)
             "Usage: spice-vdagentd [OPTIONS]\n\n"
             "Spice guest agent daemon, version %s.\n\n"
             "Options:\n"
-            "  -h         print this text\n"
-            "  -d         log debug messages (use twice for extra info)\n"
-            "  -s <port>  set virtio serial port  [%s]\n"
-            "  -u <dev>   set uinput device       [%s]\n"
-            "  -x         don't daemonize\n"
+            "  -h             print this text\n"
+            "  -d             log debug messages (use twice for extra info)\n"
+            "  -s <port>      set virtio serial port  [%s]\n"
+            "  -S <filename>  set udcs socket [%s]\n"
+            "  -u <dev>       set uinput device       [%s]\n"
+            "  -x             don't daemonize\n"
 #ifdef HAVE_CONSOLE_KIT
-            "  -X         Disable console kit integration\n"
+            "  -X             Disable console kit integration\n"
 #endif
 #ifdef HAVE_LIBSYSTEMD_LOGIN
             "  -X         Disable systemd-logind integration\n"
 #endif
-            ,VERSION, portdev, uinput_device);
+            ,VERSION, portdev, vdagentd_socket, uinput_device);
 }
 
 void daemonize(void)
@@ -834,7 +836,7 @@ int main(int argc, char *argv[])
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dhxXs:u:")))
+        if (-1 == (c = getopt(argc, argv, "-dhxXs:u:S:")))
             break;
         switch (c) {
         case 'd':
@@ -842,6 +844,9 @@ int main(int argc, char *argv[])
             break;
         case 's':
             portdev = optarg;
+            break;
+        case 'S':
+            vdagentd_socket = optarg;
             break;
         case 'u':
             uinput_device = optarg;
@@ -873,18 +878,18 @@ int main(int argc, char *argv[])
     openlog("spice-vdagentd", do_daemonize ? 0 : LOG_PERROR, LOG_USER);
 
     /* Setup communication with vdagent process(es) */
-    server = udscs_create_server(VDAGENTD_SOCKET, agent_connect,
+    server = udscs_create_server(vdagentd_socket, agent_connect,
                                  agent_read_complete, agent_disconnect,
                                  vdagentd_messages, VDAGENTD_NO_MESSAGES,
                                  debug);
     if (!server) {
         syslog(LOG_CRIT, "Fatal could not create server socket %s",
-               VDAGENTD_SOCKET);
+               vdagentd_socket);
         return 1;
     }
-    if (chmod(VDAGENTD_SOCKET, 0666)) {
+    if (chmod(vdagentd_socket, 0666)) {
         syslog(LOG_CRIT, "Fatal could not change permissions on %s: %m",
-               VDAGENTD_SOCKET);
+               vdagentd_socket);
         udscs_destroy_server(server);
         return 1;
     }
@@ -916,8 +921,8 @@ int main(int argc, char *argv[])
     vdagent_virtio_port_destroy(&virtio_port);
     session_info_destroy(session_info);
     udscs_destroy_server(server);
-    if (unlink(VDAGENTD_SOCKET) != 0)
-        syslog(LOG_ERR, "unlink %s: %s", VDAGENTD_SOCKET, strerror(errno));
+    if (unlink(vdagentd_socket) != 0)
+        syslog(LOG_ERR, "unlink %s: %s", vdagentd_socket, strerror(errno));
     syslog(LOG_INFO, "vdagentd quiting, returning status %d", retval);
 
     if (do_daemonize)
