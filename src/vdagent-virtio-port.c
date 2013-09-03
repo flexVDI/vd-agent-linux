@@ -116,6 +116,9 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
 
 error:
     syslog(LOG_ERR, "open %s: %m", portname);
+    if (vport->fd != -1) {
+        close(vport->fd);
+    }
     free(vport);
     return NULL;
 }
