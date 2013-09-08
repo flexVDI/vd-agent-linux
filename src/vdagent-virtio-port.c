@@ -359,7 +359,7 @@ static void vdagent_virtio_port_do_chunk(struct vdagent_virtio_port **vportp)
     }
 }
 
-static int vport_read(struct vdagent_virtio_port *vport, char *buf, int len)
+static int vport_read(struct vdagent_virtio_port *vport, uint8_t *buf, int len)
 {
     if (vport->is_uds) {
         return recv(vport->fd, buf, len, 0);
@@ -447,7 +447,7 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
     }
 }
 
-static int vport_write(struct vdagent_virtio_port *vport, char *buf, int len)
+static int vport_write(struct vdagent_virtio_port *vport, uint8_t *buf, int len)
 {
     if (vport->is_uds) {
         return send(vport->fd, buf, len, 0);
