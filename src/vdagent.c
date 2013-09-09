@@ -104,6 +104,7 @@ void daemon_read_complete(struct udscs_connection **connp,
         free(data);
         break;
     case VDAGENTD_CLIENT_DISCONNECTED:
+        vdagent_x11_client_disconnected(x11);
         vdagent_file_xfers_destroy(vdagent_file_xfers);
         vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir,
                                                        fx_open_dir, debug);

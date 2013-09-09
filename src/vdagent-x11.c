@@ -1305,6 +1305,16 @@ void vdagent_x11_clipboard_release(struct vdagent_x11 *x11, uint8_t selection)
     vdagent_x11_do_read(x11);
 }
 
+void vdagent_x11_client_disconnected(struct vdagent_x11 *x11)
+{
+    int sel;
+
+    for (sel = 0; sel < VD_AGENT_CLIPBOARD_SELECTION_SECONDARY; sel++) {
+        if (x11->clipboard_owner[sel] == owner_client)
+            vdagent_x11_clipboard_release(x11, sel);
+    }
+}
+
 /* Function used to determine the default location to save file-xfers,
    xdg desktop dir or xdg download dir. We error on the save side and use a
    whitelist approach, so any unknown desktops will end up with saving
