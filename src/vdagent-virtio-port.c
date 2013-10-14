@@ -91,7 +91,6 @@ struct vdagent_virtio_port *vdagent_virtio_port_create(const char *portname,
 
     vport->fd = open(portname, O_RDWR);
     if (vport->fd == -1) {
-        syslog(LOG_INFO, "open %s: %m; trying as socket", portname);
         vport->fd = socket(PF_UNIX, SOCK_STREAM, 0);
         if (vport->fd == -1) {
             goto error;
