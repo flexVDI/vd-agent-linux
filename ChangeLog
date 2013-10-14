@@ -1,3 +1,10 @@
+spice-vdagent-0.15.0
+--------------------
+* Xspice support
+* Release clipboard on client disconnect if owned by client (rhbz#1003977)
+* Turn some error messages into debugging messages (rhbz#918310)
+* Not having the virtio channel is not an error; instead silently do nothing
+
 spice-vdagent-0.14.0
 --------------------
 * More multi-monitor and arbritary resolution support bugfixes
