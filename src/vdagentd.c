@@ -382,6 +382,34 @@ size_error:
     return 0;
 }
 
+static void virtio_write_clipboard(uint8_t selection, uint32_t msg_type,
+    uint32_t data_type, const uint8_t *data, uint32_t data_size)
+{
+    uint32_t size = data_size;
+
+    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+        size += 4;
+    }
+    if (data_type != -1) {
+        size += 4;
+    }
+
+    vdagent_virtio_port_write_start(virtio_port, VDP_CLIENT_PORT, msg_type,
+                                    0, size);
+
+    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
+                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
+        uint8_t sel[4] = { selection, 0, 0, 0 };
+        vdagent_virtio_port_write_append(virtio_port, sel, 4);
+    }
+    if (data_type != -1) {
+        vdagent_virtio_port_write_append(virtio_port, (uint8_t*)&data_type, 4);
+    }
+
+    vdagent_virtio_port_write_append(virtio_port, data, data_size);
+}
+
 /* vdagentd <-> vdagent communication handling */
 int do_agent_clipboard(struct udscs_connection *conn,
         struct udscs_message_header *header, const uint8_t *data)
@@ -439,27 +467,7 @@ int do_agent_clipboard(struct udscs_connection *conn,
         return -1;
     }
 
-    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
-                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
-        size += 4;
-    }
-    if (data_type != -1) {
-        size += 4;
-    }
-
-    vdagent_virtio_port_write_start(virtio_port, VDP_CLIENT_PORT, msg_type,
-                                    0, size);
-
-    if (VD_AGENT_HAS_CAPABILITY(capabilities, capabilities_size,
-                                VD_AGENT_CAP_CLIPBOARD_SELECTION)) {
-        uint8_t sel[4] = { selection, 0, 0, 0 };
-        vdagent_virtio_port_write_append(virtio_port, sel, 4);
-    }
-    if (data_type != -1) {
-        vdagent_virtio_port_write_append(virtio_port, (uint8_t*)&data_type, 4);
-    }
-
-    vdagent_virtio_port_write_append(virtio_port, data, header->size);
+    virtio_write_clipboard(selection, msg_type, data_type, data, header->size);
 
     return 0;
 
