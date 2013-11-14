@@ -459,6 +459,9 @@ int do_agent_clipboard(struct udscs_connection *conn,
         size = 0;
         agent_owns_clipboard[selection] = 0;
         break;
+    default:
+        syslog(LOG_WARNING, "unexpected clipboard message type");
+        goto error;
     }
 
     if (size != header->size) {
