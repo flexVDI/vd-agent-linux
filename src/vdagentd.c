@@ -74,6 +74,7 @@ static int agent_owns_clipboard[256] = { 0, };
 static int quit = 0;
 static int retval = 0;
 static int client_connected = 0;
+static int max_clipboard = -1;
 
 /* utility functions */
 /* vdagentd <-> spice-client communication handling */
@@ -98,6 +99,7 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_SELECTION);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_SPARSE_MONITORS_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_GUEST_LINEEND_LF);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MAX_CLIPBOARD);
 
     vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
@@ -369,6 +371,13 @@ int virtio_port_read_complete(
         vdagent_virtio_port_reset(vport, VDP_CLIENT_PORT);
         do_client_disconnect();
         break;
+    case VD_AGENT_MAX_CLIPBOARD:
+        if (message_header->size != sizeof(VDAgentMaxClipboard))
+            goto size_error;
+        VDAgentMaxClipboard *msg = (VDAgentMaxClipboard *)data;
+        syslog(LOG_DEBUG, "Set max clipboard: %d", msg->max);
+        max_clipboard = msg->max;
+        break;
     default:
         syslog(LOG_WARNING, "unknown message type %d, ignoring",
                message_header->type);
@@ -453,6 +462,12 @@ int do_agent_clipboard(struct udscs_connection *conn,
     case VDAGENTD_CLIPBOARD_DATA:
         msg_type = VD_AGENT_CLIPBOARD;
         data_type = header->arg2;
+        if (max_clipboard != -1 && size > max_clipboard) {
+            syslog(LOG_WARNING, "clipboard is too large (%d > %d), discarding",
+                   size, max_clipboard);
+            virtio_write_clipboard(selection, msg_type, data_type, NULL, 0);
+            return 0;
+        }
         break;
     case VDAGENTD_CLIPBOARD_RELEASE:
         msg_type = VD_AGENT_CLIPBOARD_RELEASE;
