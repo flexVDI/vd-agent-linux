@@ -753,7 +753,7 @@ static uint32_t vdagent_x11_target_to_type(struct vdagent_x11 *x11,
     int i, j;
 
     for (i = 0; i < clipboard_format_count; i++) {
-        for (j = 0; j < x11->clipboard_formats[i].atom_count; i++) {
+        for (j = 0; j < x11->clipboard_formats[i].atom_count; j++) {
             if (x11->clipboard_formats[i].atoms[j] == target) {
                 return x11->clipboard_formats[i].type;
             }
