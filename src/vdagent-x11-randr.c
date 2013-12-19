@@ -364,11 +364,11 @@ static int xrandr_add_and_set(struct vdagent_x11 *x11, int output, int x, int y,
     x11->randr.monitor_sizes[output].width = width;
     x11->randr.monitor_sizes[output].height = height;
     outputs[0] = xid;
+    vdagent_x11_set_error_handler(x11, error_handler);
     s = XRRSetCrtcConfig(x11->display, x11->randr.res, x11->randr.res->crtcs[output],
                          CurrentTime, x, y, mode->id, RR_Rotate_0, outputs,
                          1);
-
-    if (s != RRSetConfigSuccess) {
+    if (vdagent_x11_restore_error_handler(x11) || (s != RRSetConfigSuccess)) {
         syslog(LOG_ERR, "failed to XRRSetCrtcConfig");
         x11->set_crtc_config_not_functional = 1;
         return 0;
