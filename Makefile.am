@@ -42,8 +42,11 @@ noinst_HEADERS = src/glib-compat.h \
 xdgautostartdir = $(sysconfdir)/xdg/autostart
 xdgautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 
-gdmautostartdir = $(datadir)/gdm/autostart/LoginWindow
+gdmautostartdir = $(datadir)/gdm/greeter/autostart
 gdmautostart_DATA = $(top_srcdir)/data/spice-vdagent.desktop
+
+gdmautostart2dir = $(datadir)/gdm/autostart/LoginWindow
+gdmautostart2_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 
 install-data-local:
 	$(mkdir_p) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
