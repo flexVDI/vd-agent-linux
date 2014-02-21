@@ -32,6 +32,8 @@
 #include "vdagent-x11.h"
 #include "vdagent-x11-priv.h"
 
+#define MM_PER_INCH (25.4)
+
 static int error_handler(Display *display, XErrorEvent *error)
 {
     vdagent_x11_caught_error = 1;
@@ -779,13 +781,16 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
 
     /* Then we can resize the RandR screen. */
     if (primary_w != x11->width[0] || primary_h != x11->height[0]) {
+        const int dpi = 96; /* FIXME: read settings from desktop or get from client dpi? */
+        int width_mm = (MM_PER_INCH * primary_w) / dpi;
+        int height_mm = (MM_PER_INCH * primary_h) / dpi;
+
         if (x11->debug)
             syslog(LOG_DEBUG, "Changing screen size to %dx%d",
                    primary_w, primary_h);
         vdagent_x11_set_error_handler(x11, error_handler);
         XRRSetScreenSize(x11->display, x11->root_window[0], primary_w, primary_h,
-                         DisplayWidthMM(x11->display, 0),
-                         DisplayHeightMM(x11->display, 0));
+                         width_mm, height_mm);
         if (vdagent_x11_restore_error_handler(x11)) {
             syslog(LOG_ERR, "XRRSetScreenSize failed, not enough mem?");
             if (!fallback && curr) {
