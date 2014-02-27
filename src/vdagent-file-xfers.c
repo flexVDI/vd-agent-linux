@@ -97,6 +97,8 @@ struct vdagent_file_xfers *vdagent_file_xfers_create(
 
 void vdagent_file_xfers_destroy(struct vdagent_file_xfers *xfers)
 {
+    g_return_if_fail(xfers != NULL);
+
     g_hash_table_destroy(xfers->xfers);
     g_free(xfers->save_dir);
     g_free(xfers);
@@ -106,6 +108,8 @@ AgentFileXferTask *vdagent_file_xfers_get_task(
     struct vdagent_file_xfers *xfers, uint32_t id)
 {
     AgentFileXferTask *task;
+
+    g_return_val_if_fail(xfers != NULL, NULL);
 
     task = g_hash_table_lookup(xfers->xfers, GUINT_TO_POINTER(id));
     if (task == NULL)
@@ -172,6 +176,8 @@ void vdagent_file_xfers_start(struct vdagent_file_xfers *xfers,
     char *dir = NULL, *path = NULL, *file_path = NULL;
     struct stat st;
     int i;
+
+    g_return_if_fail(xfers != NULL);
 
     if (g_hash_table_lookup(xfers->xfers, GUINT_TO_POINTER(msg->id))) {
         syslog(LOG_ERR, "file-xfer: error id %u already exists, ignoring!",
@@ -246,6 +252,8 @@ void vdagent_file_xfers_status(struct vdagent_file_xfers *xfers,
 {
     AgentFileXferTask *task;
 
+    g_return_if_fail(xfers != NULL);
+
     task = vdagent_file_xfers_get_task(xfers, msg->id);
     if (!task)
         return;
@@ -266,6 +274,8 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
 {
     AgentFileXferTask *task;
     int len, status = -1;
+
+    g_return_if_fail(xfers != NULL);
 
     task = vdagent_file_xfers_get_task(xfers, msg->id);
     if (!task)
