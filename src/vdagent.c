@@ -90,25 +90,33 @@ void daemon_read_complete(struct udscs_connection **connp,
         }
         break;
     case VDAGENTD_FILE_XFER_START:
-        vdagent_file_xfers_start(vdagent_file_xfers,
-                                 (VDAgentFileXferStartMessage *)data);
+        if (vdagent_file_xfers != NULL) {
+            vdagent_file_xfers_start(vdagent_file_xfers,
+                                     (VDAgentFileXferStartMessage *)data);
+        }
         free(data);
         break;
     case VDAGENTD_FILE_XFER_STATUS:
-        vdagent_file_xfers_status(vdagent_file_xfers,
-                                  (VDAgentFileXferStatusMessage *)data);
+        if (vdagent_file_xfers != NULL) {
+            vdagent_file_xfers_status(vdagent_file_xfers,
+                                      (VDAgentFileXferStatusMessage *)data);
+        }
         free(data);
         break;
     case VDAGENTD_FILE_XFER_DATA:
-        vdagent_file_xfers_data(vdagent_file_xfers,
-                                (VDAgentFileXferDataMessage *)data);
+        if (vdagent_file_xfers != NULL) {
+            vdagent_file_xfers_data(vdagent_file_xfers,
+                                    (VDAgentFileXferDataMessage *)data);
+        }
         free(data);
         break;
     case VDAGENTD_CLIENT_DISCONNECTED:
         vdagent_x11_client_disconnected(x11);
-        vdagent_file_xfers_destroy(vdagent_file_xfers);
-        vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir,
-                                                       fx_open_dir, debug);
+        if (vdagent_file_xfers != NULL) {
+            vdagent_file_xfers_destroy(vdagent_file_xfers);
+            vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir,
+                                                           fx_open_dir, debug);
+        }
         break;
     default:
         syslog(LOG_ERR, "Unknown message from vdagentd type: %d, ignoring",
@@ -336,7 +344,9 @@ reconnect:
         udscs_client_handle_fds(&client, &readfds, &writefds);
     }
 
-    vdagent_file_xfers_destroy(vdagent_file_xfers);
+    if (vdagent_file_xfers != NULL) {
+        vdagent_file_xfers_destroy(vdagent_file_xfers);
+    }
     vdagent_x11_destroy(x11, client == NULL);
     udscs_destroy_connection(&client);
     if (!quit && do_daemonize)
