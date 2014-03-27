@@ -306,13 +306,14 @@ reconnect:
         fx_dir = g_get_user_special_dir(G_USER_DIRECTORY_DESKTOP);
     else if (!strcmp(fx_dir, "xdg-download"))
         fx_dir = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
-    if (!fx_dir) {
+    if (fx_dir) {
+        vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir,
+                                                       fx_open_dir, debug);
+    } else {
         syslog(LOG_WARNING,
-               "warning could not get file xfer save dir, using cwd");
-        fx_dir = ".";
+               "warning could not get file xfer save dir, file transfers will be disabled");
+        vdagent_file_xfers = NULL;
     }
-    vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir,
-                                                   fx_open_dir, debug);
 
     if (parent_socket) {
         if (write(parent_socket, "OK", 2) != 2)
