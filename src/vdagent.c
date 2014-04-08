@@ -93,6 +93,9 @@ void daemon_read_complete(struct udscs_connection **connp,
         if (vdagent_file_xfers != NULL) {
             vdagent_file_xfers_start(vdagent_file_xfers,
                                      (VDAgentFileXferStartMessage *)data);
+        } else {
+            vdagent_file_xfers_error(*connp,
+                                     ((VDAgentFileXferStartMessage *)data)->id);
         }
         free(data);
         break;
@@ -100,6 +103,9 @@ void daemon_read_complete(struct udscs_connection **connp,
         if (vdagent_file_xfers != NULL) {
             vdagent_file_xfers_status(vdagent_file_xfers,
                                       (VDAgentFileXferStatusMessage *)data);
+        } else {
+            vdagent_file_xfers_error(*connp,
+                                     ((VDAgentFileXferStatusMessage *)data)->id);
         }
         free(data);
         break;
@@ -107,6 +113,9 @@ void daemon_read_complete(struct udscs_connection **connp,
         if (vdagent_file_xfers != NULL) {
             vdagent_file_xfers_data(vdagent_file_xfers,
                                     (VDAgentFileXferDataMessage *)data);
+        } else {
+            vdagent_file_xfers_error(*connp,
+                                     ((VDAgentFileXferDataMessage *)data)->id);
         }
         free(data);
         break;

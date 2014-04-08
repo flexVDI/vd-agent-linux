@@ -315,3 +315,11 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
         g_hash_table_remove(xfers->xfers, GUINT_TO_POINTER(msg->id));
     }
 }
+
+void vdagent_file_xfers_error(struct udscs_connection *vdagentd, uint32_t msg_id)
+{
+    g_return_if_fail(vdagentd != NULL);
+
+    udscs_write(vdagentd, VDAGENTD_FILE_XFER_STATUS,
+                msg_id, VD_AGENT_FILE_XFER_STATUS_ERROR, NULL, 0);
+}
