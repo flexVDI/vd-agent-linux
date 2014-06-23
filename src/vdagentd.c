@@ -756,6 +756,7 @@ static void usage(FILE *fp)
             "  -s <port>      set virtio serial port  [%s]\n"
             "  -S <filename>  set udcs socket [%s]\n"
             "  -u <dev>       set uinput device       [%s]\n"
+            "  -f             treat uinput device as fake; no ioctls\n"
             "  -x             don't daemonize\n"
 #ifdef HAVE_CONSOLE_KIT
             "  -X             Disable console kit integration\n"
@@ -865,7 +866,7 @@ int main(int argc, char *argv[])
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dhxXs:u:S:")))
+        if (-1 == (c = getopt(argc, argv, "-dhxXfs:u:S:")))
             break;
         switch (c) {
         case 'd':
@@ -879,6 +880,9 @@ int main(int argc, char *argv[])
             break;
         case 'u':
             uinput_device = optarg;
+            break;
+        case 'f':
+            uinput_fake = 1;
             break;
         case 'x':
             do_daemonize = 0;
@@ -894,11 +898,6 @@ int main(int argc, char *argv[])
             usage(stderr);
             return 1;
         }
-    }
-
-    if (strncmp(uinput_device, "/dev", 4) != 0) {
-        syslog(LOG_INFO, "using fake uinput");
-        uinput_fake = 1;
     }
 
     memset(&act, 0, sizeof(act));
