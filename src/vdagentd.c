@@ -59,6 +59,7 @@ static const char *vdagentd_socket = VDAGENTD_SOCKET;
 static const char *uinput_device = "/dev/uinput";
 static int debug = 0;
 static int uinput_fake = 0;
+static int only_once = 0;
 static struct udscs_server *server = NULL;
 static struct vdagent_virtio_port *virtio_port = NULL;
 static GHashTable *active_xfers = NULL;
@@ -758,6 +759,7 @@ static void usage(FILE *fp)
             "  -u <dev>       set uinput device       [%s]\n"
             "  -f             treat uinput device as fake; no ioctls\n"
             "  -x             don't daemonize\n"
+            "  -o             Only handle one virtio serial session.\n"
 #ifdef HAVE_CONSOLE_KIT
             "  -X             Disable console kit integration\n"
 #endif
@@ -798,6 +800,7 @@ void main_loop(void)
     fd_set readfds, writefds;
     int n, nfds;
     int ck_fd = 0;
+    int once = 0;
 
     while (!quit) {
         FD_ZERO(&readfds);
@@ -827,6 +830,7 @@ void main_loop(void)
         udscs_server_handle_fds(server, &readfds, &writefds);
 
         if (virtio_port) {
+            once = 1;
             vdagent_virtio_port_handle_fds(&virtio_port, &readfds, &writefds);
             if (!virtio_port) {
                 int old_client_connected = client_connected;
@@ -844,6 +848,11 @@ void main_loop(void)
                 do_client_disconnect();
                 client_connected = old_client_connected;
             }
+        }
+        else if (only_once && once)
+        {
+            syslog(LOG_INFO, "Exiting after one client session.");
+            break;
         }
 
         if (session_info && FD_ISSET(ck_fd, &readfds)) {
@@ -866,7 +875,7 @@ int main(int argc, char *argv[])
     struct sigaction act;
 
     for (;;) {
-        if (-1 == (c = getopt(argc, argv, "-dhxXfs:u:S:")))
+        if (-1 == (c = getopt(argc, argv, "-dhxXfos:u:S:")))
             break;
         switch (c) {
         case 'd':
@@ -883,6 +892,9 @@ int main(int argc, char *argv[])
             break;
         case 'f':
             uinput_fake = 1;
+            break;
+        case 'o':
+            only_once = 1;
             break;
         case 'x':
             do_daemonize = 0;
