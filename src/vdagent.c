@@ -35,6 +35,7 @@
 #include <sys/stat.h>
 #include <spice/vd_agent.h>
 #include <glib.h>
+#include <poll.h>
 
 #include "udscs.h"
 #include "vdagentd-proto.h"
@@ -151,9 +152,34 @@ static void quit_handler(int sig)
     quit = 1;
 }
 
-void daemonize(void)
+/* When we daemonize, it is useful to have the main process
+   wait to make sure the X connection worked.  We wait up
+   to 10 seconds to get an 'all clear' from the child
+   before we exit.  If we don't, we're able to exit with a
+   status that indicates an error occured */
+void wait_and_exit(int s)
 {
-    int x, retval = 0;
+    char buf[4];
+    struct pollfd p;
+    p.fd = s;
+    p.events = POLLIN;
+
+    if (poll(&p, 1, 10000) > 0)
+        if (read(s, buf, sizeof(buf)) > 0)
+            exit(0);
+
+    exit(1);
+}
+
+int daemonize(void)
+{
+    int x;
+    int fd[2];
+
+    if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fd)) {
+        syslog(LOG_ERR, "socketpair : %s", strerror(errno));
+        exit(1);
+    }
 
     /* detach from terminal */
     switch (fork()) {
@@ -161,13 +187,17 @@ void daemonize(void)
         close(0); close(1); close(2);
         setsid();
         x = open("/dev/null", O_RDWR); x = dup(x); x = dup(x);
-        break;
+        close(fd[0]);
+        return fd[1];
     case -1:
         syslog(LOG_ERR, "fork: %s", strerror(errno));
-        retval = 1;
+        exit(1);
     default:
-        exit(retval);
+        close(fd[1]);
+        wait_and_exit(fd[0]);
     }
+
+    return 0;
 }
 
 static int file_test(const char *path)
@@ -182,6 +212,7 @@ int main(int argc, char *argv[])
     fd_set readfds, writefds;
     int c, n, nfds, x11_fd;
     int do_daemonize = 1;
+    int parent_socket = 0;
     int x11_sync = 0;
     struct sigaction act;
 
@@ -236,7 +267,7 @@ int main(int argc, char *argv[])
     }
 
     if (do_daemonize)
-        daemonize();
+        parent_socket = daemonize();
 
 reconnect:
     if (version_mismatch) {
@@ -274,6 +305,13 @@ reconnect:
     }
     vdagent_file_xfers = vdagent_file_xfers_create(client, fx_dir,
                                                    fx_open_dir, debug);
+
+    if (parent_socket) {
+        if (write(parent_socket, "OK", 2) != 2)
+            syslog(LOG_WARNING, "Parent already gone.");
+        close(parent_socket);
+        parent_socket = 0;
+    }
 
     while (client && !quit) {
         FD_ZERO(&readfds);
