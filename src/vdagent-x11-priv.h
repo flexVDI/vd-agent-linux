@@ -64,8 +64,8 @@ struct monitor_size {
 };
 
 static const struct clipboard_format_tmpl clipboard_format_templates[] = {
-    { VD_AGENT_CLIPBOARD_UTF8_TEXT, { "UTF8_STRING",
-      "text/plain;charset=UTF-8", "text/plain;charset=utf-8", NULL }, },
+    { VD_AGENT_CLIPBOARD_UTF8_TEXT, { "UTF8_STRING", "text/plain;charset=UTF-8",
+      "text/plain;charset=utf-8", "STRING", NULL }, },
     { VD_AGENT_CLIPBOARD_IMAGE_PNG, { "image/png", NULL }, },
     { VD_AGENT_CLIPBOARD_IMAGE_BMP, { "image/bmp", "image/x-bmp",
       "image/x-MS-bmp", "image/x-win-bitmap", NULL }, },
