@@ -218,6 +218,7 @@ struct vdagent_x11 *vdagent_x11_create(struct udscs_connection *vdagentd,
     x11->targets_atom = XInternAtom(x11->display, "TARGETS", False);
     x11->incr_atom = XInternAtom(x11->display, "INCR", False);
     x11->multiple_atom = XInternAtom(x11->display, "MULTIPLE", False);
+    x11->timestamp_atom = XInternAtom(x11->display, "TIMESTAMP", False);
     for(i = 0; i < clipboard_format_count; i++) {
         x11->clipboard_formats[i].type = clipboard_format_templates[i].type;
         for(j = 0; clipboard_format_templates[i].atom_names[j]; j++) {
@@ -1035,6 +1036,20 @@ static void vdagent_x11_handle_selection_request(struct vdagent_x11 *x11)
         vdagent_x11_send_selection_notify(x11, None, NULL);
         return;
     }
+
+    if (event->xselectionrequest.target == x11->timestamp_atom) {
+        /* TODO: use more accurate selection time */
+        guint32 timestamp = event->xselectionrequest.time;
+
+        XChangeProperty(x11->display, event->xselectionrequest.requestor,
+                       event->xselectionrequest.property,
+                        event->xselectionrequest.target, 32, PropModeReplace,
+                        (guint8*)&timestamp, 1);
+        vdagent_x11_send_selection_notify(x11,
+                       event->xselectionrequest.property, NULL);
+       return;
+    }
+
 
     if (event->xselectionrequest.target == x11->targets_atom) {
         vdagent_x11_send_targets(x11, selection, event);

@@ -83,6 +83,7 @@ struct vdagent_x11 {
     Atom targets_atom;
     Atom incr_atom;
     Atom multiple_atom;
+    Atom timestamp_atom;
     Window root_window[MAX_SCREENS];
     Window selection_window;
     struct udscs_connection *vdagentd;
