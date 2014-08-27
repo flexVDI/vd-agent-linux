@@ -21,6 +21,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <glib.h>
 #include <string.h>
 #include <syslog.h>
 #include <stdlib.h>
@@ -746,6 +747,10 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
         syslog(LOG_WARNING, "Ignoring previous failed client monitor config");
         goto exit;
     }
+
+    gchar *config = g_build_filename (g_get_user_config_dir (), "monitors.xml", NULL);
+    g_unlink(config);
+    g_free(config);
 
     for (i = mon_config->num_of_monitors; i < x11->randr.res->noutput; i++)
         xrandr_disable_output(x11, i);
