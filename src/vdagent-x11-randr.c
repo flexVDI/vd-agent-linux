@@ -132,11 +132,14 @@ void vdagent_x11_randr_init(struct vdagent_x11 *x11)
         return;
     }
 
-    if (XRRQueryExtension(x11->display, &i, &i)) {
+    if (XRRQueryExtension(x11->display, &x11->xrandr_event_base, &i)) {
         XRRQueryVersion(x11->display, &x11->xrandr_major, &x11->xrandr_minor);
         if (x11->xrandr_major == 1 && x11->xrandr_minor >= 3)
             x11->has_xrandr = 1;
     }
+
+    XRRSelectInput(x11->display, x11->root_window[0],
+        RRScreenChangeNotifyMask | RRCrtcChangeNotifyMask);
 
     if (x11->has_xrandr) {
         update_randr_res(x11, 0);
@@ -466,6 +469,8 @@ static int set_screen_to_best_size(struct vdagent_x11 *x11, int width, int heigh
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
     int screen, int width, int height)
 {
+    update_randr_res(x11, 0);
+
     if (width == x11->width[screen] && height == x11->height[screen]) {
         return;
     }
@@ -479,6 +484,33 @@ void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
     if (!x11->dont_send_guest_xorg_res) {
         vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
     }
+}
+
+int vdagent_x11_randr_handle_event(struct vdagent_x11 *x11,
+    XEvent event)
+{
+    int handled = TRUE;
+
+    switch (event.type - x11->xrandr_event_base) {
+        case RRScreenChangeNotify: {
+            XRRScreenChangeNotifyEvent *sce =
+                (XRRScreenChangeNotifyEvent *) &event;
+            vdagent_x11_randr_handle_root_size_change(x11, 0,
+                sce->width, sce->height);
+            break;
+        }
+        case RRNotify: {
+            update_randr_res(x11, 0);
+            if (!x11->dont_send_guest_xorg_res)
+                vdagent_x11_send_daemon_guest_xorg_res(x11, 1);
+            break;
+        }
+        default:
+            handled = FALSE;
+            break;
+    }
+
+    return handled;
 }
 
 static int min_int(int x, int y)

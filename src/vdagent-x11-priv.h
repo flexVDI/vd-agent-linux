@@ -95,6 +95,7 @@ struct vdagent_x11 {
     int height[MAX_SCREENS];
     int has_xfixes;
     int xfixes_event_base;
+    int xrandr_event_base;
     int max_prop_size;
     int expected_targets_notifies[256];
     int clipboard_owner[256];
@@ -145,7 +146,8 @@ void vdagent_x11_send_daemon_guest_xorg_res(struct vdagent_x11 *x11,
                                             int update);
 void vdagent_x11_randr_handle_root_size_change(struct vdagent_x11 *x11,
                                             int screen, int width, int height);
-
+int vdagent_x11_randr_handle_event(struct vdagent_x11 *x11,
+    XEvent event);
 void vdagent_x11_set_error_handler(struct vdagent_x11 *x11,
     int (*handler)(Display *, XErrorEvent *));
 int vdagent_x11_restore_error_handler(struct vdagent_x11 *x11);

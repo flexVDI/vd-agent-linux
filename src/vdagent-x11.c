@@ -503,9 +503,11 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
         return;
     }
 
+    if (vdagent_x11_randr_handle_event(x11, event))
+        return;
+
     switch (event.type) {
     case ConfigureNotify:
-        // TODO: handle CrtcConfigureNotify, OutputConfigureNotify can be ignored.
         for (i = 0; i < x11->screen_count; i++)
             if (event.xconfigure.window == x11->root_window[i])
                 break;
