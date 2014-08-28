@@ -292,7 +292,8 @@ void vdagent_file_xfers_data(struct vdagent_file_xfers *xfers,
                 close(task->file_fd);
                 task->file_fd = -1;
                 if (xfers->open_save_dir &&
-                        task->file_xfer_nr == task->file_xfer_total) {
+                        task->file_xfer_nr == task->file_xfer_total &&
+                        g_hash_table_size(xfers->xfers) == 1) {
                     char buf[PATH_MAX];
                     snprintf(buf, PATH_MAX, "xdg-open '%s'&", xfers->save_dir);
                     status = system(buf);
