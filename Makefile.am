@@ -51,9 +51,6 @@ gdmautostart2_DATA = $(top_srcdir)/data/spice-vdagent.desktop
 install-data-local:
 	$(mkdir_p) $(DESTDIR)$(localstatedir)/run/spice-vdagentd
 
-rsyslogdir = $(sysconfdir)/rsyslog.d
-rsyslog_DATA = $(top_srcdir)/data/rsyslog.d/spice-vdagentd.conf
-
 if INIT_SCRIPT_RED_HAT
 initdir = $(sysconfdir)/rc.d/init.d
 init_SCRIPTS = $(top_srcdir)/data/spice-vdagentd
@@ -79,7 +76,6 @@ manpage_DATA = data/spice-vdagent.1	\
 EXTRA_DIST =					\
 	README.RHEL-5				\
 	data/70-spice-vdagentd.rules		\
-	data/rsyslog.d/spice-vdagentd.conf	\
 	data/spice-vdagent.desktop		\
 	data/spice-vdagentd			\
 	data/spice-vdagentd.service		\
