@@ -795,7 +795,7 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
                          width_mm, height_mm);
         if (vdagent_x11_restore_error_handler(x11)) {
             syslog(LOG_ERR, "XRRSetScreenSize failed, not enough mem?");
-            if (!fallback && curr) {
+            if (!fallback) {
                 syslog(LOG_WARNING, "Restoring previous config");
                 vdagent_x11_set_monitor_config(x11, curr, 1);
                 free(curr);
