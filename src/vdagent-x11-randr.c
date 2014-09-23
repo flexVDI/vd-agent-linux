@@ -735,6 +735,8 @@ void vdagent_x11_set_monitor_config(struct vdagent_x11 *x11,
     }
 
     curr = get_current_mon_config(x11);
+    if (!curr)
+        goto exit;
     if (same_monitor_configs(mon_config, curr) &&
            x11->width[0] == primary_w && x11->height[0] == primary_h) {
         goto exit;
