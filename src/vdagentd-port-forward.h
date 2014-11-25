@@ -9,11 +9,23 @@
 #include <spice/vd_agent.h>
 
 typedef struct port_forwarder port_forwarder;
-typedef void (*vdagent_port_forwarder_send_command_callback)(
+
+/*
+ * Callback to send commands to the SPICE client.
+ * Returns 0 on success, -1 on error (client disconnected)
+ */
+typedef int (*vdagent_port_forwarder_send_command_callback)(
     uint32_t command, const uint8_t *data, uint32_t data_size);
 
-port_forwarder *vdagent_port_forwarder_create(vdagent_port_forwarder_send_command_callback cb);
+/*
+ * Create a port forwarder, with a callback and a debug flag
+ */
+port_forwarder *vdagent_port_forwarder_create(vdagent_port_forwarder_send_command_callback cb,
+                                              int debug);
 
+/*
+ * Destroy the port forwarder.
+ */
 void vdagent_port_forwarder_destroy(port_forwarder *pf);
 
 /*
@@ -31,9 +43,13 @@ void vdagent_port_forwarder_handle_fds(port_forwarder *pf,
 
 /*
  * Handle a message comming from the SPICE client through the virtio port.
- * PRE: message_header.type == VD_AGENT_PORT_FORWARD_COMMAND
  */
-void do_port_forward_command(port_forwarder *pf,
-                             VDAgentMessage *message_header, uint8_t *data);
+void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data);
+
+/*
+ * Signal the port forwarder that the client has disconnected.
+ * All connections and open ports are closed.
+ */
+void vdagent_port_forwarder_client_disconnected(port_forwarder *pf);
 
 #endif /* __PORT_FORWARD_H */
