@@ -86,6 +86,7 @@ static void add_data_to_write_buffer(write_buffer **bufferp, const uint8_t * dat
 }
 
 typedef struct connection {
+    int connected;
     int socket;
     write_buffer * buffer;
 } connection;
@@ -93,8 +94,10 @@ typedef struct connection {
 static connection *new_connection()
 {
     connection *conn = (connection *)malloc(sizeof(connection));
-    if (conn)
+    if (conn) {
+        conn->connected = FALSE;
         conn->buffer = NULL;
+    }
     return conn;
 }
 
@@ -159,7 +162,7 @@ static void add_connection_to_fd_set(gpointer key, gpointer value, gpointer user
 {
     connection *conn = (connection *)value;
     port_forwarder *pf = (port_forwarder *)user_data;
-    FD_SET(conn->socket, pf->fds.readfds);
+    if (conn->connected) FD_SET(conn->socket, pf->fds.readfds);
     if (conn->buffer) FD_SET(conn->socket, pf->fds.writefds);
     if (conn->socket > pf->fds.nfds) pf->fds.nfds = conn->socket;
 }
@@ -313,35 +316,35 @@ void vdagent_port_forwarder_handle_fds(port_forwarder *pf, fd_set *readfds, fd_s
     }
 }
 
-static int listen_to(port_forwarder *pf, uint16_t port)
+static void listen_to(port_forwarder *pf, uint16_t port)
 {
     int sock, reuse_addr = 1;
     struct sockaddr_in addr;
     socklen_t addrLen = sizeof(struct sockaddr_in);
+    connection *acceptor;
 
     if (g_hash_table_lookup(pf->acceptors, GUINT_TO_POINTER(port))) {
         syslog(LOG_INFO, "Already listening to port %d", (int)port);
-        return 0;
+    } else {
+        bzero((char *) &addr, addrLen);
+        addr.sin_family = AF_INET;
+        inet_aton("127.0.0.1", &addr.sin_addr);
+        addr.sin_port = htons(port);
+        sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0 ||
+            fcntl(sock, F_SETFL, O_NONBLOCK) ||
+            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(int)) ||
+            setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &reuse_addr, sizeof(int)) ||
+            bind(sock, (struct sockaddr *) &addr, addrLen) < 0) {
+            syslog(LOG_ERR, "Failed to listen to port %d: %m", port);
+        } else {
+            listen(sock, 5);
+            acceptor = new_connection();
+            acceptor->socket = sock;
+            acceptor->connected = TRUE;
+            g_hash_table_insert(pf->acceptors, GUINT_TO_POINTER(port), acceptor);
+        }
     }
-
-    bzero((char *) &addr, addrLen);
-    addr.sin_family = AF_INET;
-    inet_aton("127.0.0.1", &addr.sin_addr);
-    addr.sin_port = htons(port);
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0 ||
-        fcntl(sock, F_SETFL, O_NONBLOCK) ||
-        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(int)) ||
-        setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &reuse_addr, sizeof(int)) ||
-        bind(sock, (struct sockaddr *) &addr, addrLen) < 0) {
-        return 1;
-    }
-    listen(sock, 5);
-    connection *acceptor = new_connection();
-    acceptor->socket = sock;
-
-    g_hash_table_insert(pf->acceptors, GUINT_TO_POINTER(port), acceptor);
-    return 0;
 }
 
 static void read_data(port_forwarder *pf, VDAgentPortForwardDataMessage * msg)
@@ -357,6 +360,25 @@ static void read_data(port_forwarder *pf, VDAgentPortForwardDataMessage * msg)
     }
 }
 
+void remote_connected(port_forwarder *pf, int id) {
+    connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(id));
+    if (conn) {
+        conn->connected = TRUE;
+    } else {
+        syslog(LOG_WARNING, "Unknown connection %d on connect command", id);
+    }
+}
+
+void shutdown_port(port_forwarder *pf, uint16_t port) {
+    if (port == 0) {
+        if (pf->debug) syslog(LOG_DEBUG, "Resetting port forwarder by client");
+        g_hash_table_remove_all(pf->connections);
+        g_hash_table_remove_all(pf->acceptors);
+    } else if (!g_hash_table_remove(pf->acceptors, GUINT_TO_POINTER(port))) {
+        syslog(LOG_WARNING, "Not listening to port %d on shutdown command", port);
+    }
+}
+
 void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data)
 {
     uint16_t port;
@@ -366,9 +388,11 @@ void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data
     switch (command) {
         case VD_AGENT_PORT_FORWARD_LISTEN:
             port = ((VDAgentPortForwardListenMessage *)data)->port;
-            if (listen_to(pf, port)) {
-                syslog(LOG_ERR, "Failed to listen to port %d: %m", port);
-            }
+            listen_to(pf, port);
+            break;
+        case VD_AGENT_PORT_FORWARD_CONNECT:
+            id = ((VDAgentPortForwardConnectMessage *)data)->id;
+            remote_connected(pf, id);
             break;
         case VD_AGENT_PORT_FORWARD_DATA:
             read_data(pf, (VDAgentPortForwardDataMessage *)data);
@@ -382,13 +406,7 @@ void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data
             break;
         case VD_AGENT_PORT_FORWARD_SHUTDOWN:
             port = ((VDAgentPortForwardShutdownMessage *)data)->port;
-            if (port == 0) {
-                if (pf->debug) syslog(LOG_DEBUG, "Resetting port forwarder by client");
-                g_hash_table_remove_all(pf->connections);
-                g_hash_table_remove_all(pf->acceptors);
-            } else if (!g_hash_table_remove(pf->acceptors, GUINT_TO_POINTER(port))) {
-                syslog(LOG_WARNING, "Not listening to port %d on shutdown command", port);
-            }
+            shutdown_port(pf, port);
             break;
         default:
             pf->client_disconnected = TRUE;
