@@ -89,6 +89,7 @@ typedef struct connection {
     int connected;
     int socket;
     write_buffer * buffer;
+    uint32_t data_sent, data_received, ack_interval;
 } connection;
 
 static connection *new_connection()
@@ -97,6 +98,7 @@ static connection *new_connection()
     if (conn) {
         conn->connected = FALSE;
         conn->buffer = NULL;
+        conn->data_sent = conn->data_received = 0;
     }
     return conn;
 }
@@ -158,11 +160,14 @@ void vdagent_port_forwarder_destroy(port_forwarder *pf)
     }
 }
 
+#define WINDOW_SIZE 10*1024*1024
+
 static void add_connection_to_fd_set(gpointer key, gpointer value, gpointer user_data)
 {
     connection *conn = (connection *)value;
     port_forwarder *pf = (port_forwarder *)user_data;
-    if (conn->connected) FD_SET(conn->socket, pf->fds.readfds);
+    if (conn->connected && conn->data_sent < WINDOW_SIZE)
+        FD_SET(conn->socket, pf->fds.readfds);
     if (conn->buffer) FD_SET(conn->socket, pf->fds.writefds);
     if (conn->socket > pf->fds.nfds) pf->fds.nfds = conn->socket;
 }
@@ -216,6 +221,7 @@ static void check_new_connection(gpointer key, gpointer value, gpointer user_dat
             syslog(LOG_ERR, "Failed to accept connection on port %d: %m", GPOINTER_TO_UINT(key));
         } else {
             msg.id = get_connection_id(conn);
+            msg.ack_interval = WINDOW_SIZE / 2;
             if (msg.id == -1) {
                 syslog(LOG_ERR, "Failed to accept connection on port %d", GPOINTER_TO_UINT(key));
                 delete_connection(conn);
@@ -250,6 +256,7 @@ static gboolean read_connection(port_forwarder *pf, connection *conn, int id)
         msg->size = bytes_read;
         try_send_command(pf, VD_AGENT_PORT_FORWARD_DATA, msg_buffer,
                          HEAD_SIZE + bytes_read);
+        conn->data_sent += bytes_read;
         return FALSE;
     }
 }
@@ -257,6 +264,7 @@ static gboolean read_connection(port_forwarder *pf, connection *conn, int id)
 static gboolean write_connection(port_forwarder *pf, connection *conn, int id)
 {
     VDAgentPortForwardCloseMessage closeMsg;
+    VDAgentPortForwardAckMessage ackMsg;
     int bytes_written;
 
     while (conn->buffer) {
@@ -269,6 +277,14 @@ static gboolean write_connection(port_forwarder *pf, connection *conn, int id)
                              (const uint8_t *)&closeMsg, sizeof(closeMsg));
             return TRUE;
         } else {
+            conn->data_received += bytes_written;
+            if (conn->data_received >= conn->ack_interval) {
+                ackMsg.id = id;
+                ackMsg.size = conn->data_received;
+                conn->data_received = 0;
+                try_send_command(pf, VD_AGENT_PORT_FORWARD_ACK,
+                                (const uint8_t *)&ackMsg, sizeof(ackMsg));
+            }
             conn->buffer->pos += bytes_written;
             if (conn->buffer->pos < conn->buffer->size) {
                 break;
@@ -276,6 +292,7 @@ static gboolean write_connection(port_forwarder *pf, connection *conn, int id)
                 write_buffer * next = conn->buffer->next;
                 delete_write_buffer(conn->buffer);
                 conn->buffer = next;
+                if (!next && !conn->connected) return TRUE;
             }
         }
     }
@@ -347,35 +364,60 @@ static void listen_to(port_forwarder *pf, uint16_t port)
     }
 }
 
-static void read_data(port_forwarder *pf, VDAgentPortForwardDataMessage * msg)
+static void read_data(port_forwarder *pf, VDAgentPortForwardDataMessage *msg)
 {
     if (msg->size) {
         connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(msg->id));
         if (conn) {
             add_data_to_write_buffer(&conn->buffer, msg->data, msg->size);
         }
-        /* Ignore unknown connections, they happen when data messages arrive before the close
-         * command has reached the client.
+        /* Ignore unknown connections, they happen when data/ack messages arrive before the close
+         * command has reached the other side.
          */
     }
 }
 
-void remote_connected(port_forwarder *pf, int id) {
-    connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(id));
+static void ack_data(port_forwarder *pf, VDAgentPortForwardAckMessage *msg)
+{
+    connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(msg->id));
     if (conn) {
-        conn->connected = TRUE;
-    } else {
-        syslog(LOG_WARNING, "Unknown connection %d on connect command", id);
+        conn->data_sent -= msg->size;
+        if (pf->debug) syslog(LOG_DEBUG, "Connection %d ack %d bytes, %d remaining",
+                              (int)msg->id, (int)msg->size, conn->data_sent);
     }
 }
 
-void shutdown_port(port_forwarder *pf, uint16_t port) {
+static void remote_connected(port_forwarder *pf, VDAgentPortForwardConnectMessage *msg) {
+    connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(msg->id));
+    if (conn) {
+        conn->connected = TRUE;
+        conn->ack_interval = msg->ack_interval;
+    } else {
+        syslog(LOG_WARNING, "Unknown connection %d on connect command", msg->id);
+    }
+}
+
+static void shutdown_port(port_forwarder *pf, uint16_t port) {
     if (port == 0) {
         if (pf->debug) syslog(LOG_DEBUG, "Resetting port forwarder by client");
         g_hash_table_remove_all(pf->connections);
         g_hash_table_remove_all(pf->acceptors);
     } else if (!g_hash_table_remove(pf->acceptors, GUINT_TO_POINTER(port))) {
         syslog(LOG_WARNING, "Not listening to port %d on shutdown command", port);
+    }
+}
+
+static void start_closing(port_forwarder *pf, int id)
+{
+    connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(id));
+    if (conn) {
+        if (pf->debug) syslog(LOG_DEBUG, "Client closed connection %d", id);
+        if (conn->buffer)
+            conn->connected = FALSE;
+        else
+            g_hash_table_remove(pf->connections, GUINT_TO_POINTER(id));
+    } else {
+        syslog(LOG_WARNING, "Unknown connection %d on close command", id);
     }
 }
 
@@ -391,18 +433,17 @@ void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data
             listen_to(pf, port);
             break;
         case VD_AGENT_PORT_FORWARD_CONNECT:
-            id = ((VDAgentPortForwardConnectMessage *)data)->id;
-            remote_connected(pf, id);
+            remote_connected(pf, (VDAgentPortForwardConnectMessage *)data);
             break;
         case VD_AGENT_PORT_FORWARD_DATA:
             read_data(pf, (VDAgentPortForwardDataMessage *)data);
             break;
+        case VD_AGENT_PORT_FORWARD_ACK:
+            ack_data(pf, (VDAgentPortForwardAckMessage *)data);
+            break;
         case VD_AGENT_PORT_FORWARD_CLOSE:
             id = ((VDAgentPortForwardCloseMessage *)data)->id;
-            if (pf->debug) syslog(LOG_DEBUG, "Client closed connection %d", id);
-            if (!g_hash_table_remove(pf->connections, GUINT_TO_POINTER(id))) {
-                syslog(LOG_WARNING, "Unknown connection %d on close command", id);
-            }
+            start_closing(pf, id);
             break;
         case VD_AGENT_PORT_FORWARD_SHUTDOWN:
             port = ((VDAgentPortForwardShutdownMessage *)data)->port;
