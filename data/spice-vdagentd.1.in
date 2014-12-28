@@ -29,6 +29,13 @@ Print a short description of all command line options
 \fB-d\fP
 Log debug messages (use twice for extra info)
 .TP
+\fB-f\fP
+Treat uinput device as fake; no ioctls.
+This is useful in combination with Xspice.
+.TP
+\fB-o\fP
+The daemon will exit after processing a single session.
+.TP
 \fB-s\fP \fIport\fR
 Set virtio serial \fIport\fR (default: /dev/virtio-ports/com.redhat.spice.0)
 .TP
