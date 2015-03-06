@@ -80,6 +80,7 @@ AC_ARG_ENABLE([static-uinput],
 PKG_CHECK_MODULES([GLIB2], [glib-2.0 >= 2.12])
 PKG_CHECK_MODULES(X, [xfixes xrandr >= 1.3 xinerama x11])
 PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.12.5])
+PKG_CHECK_MODULES(ALSA, [alsa >= 1.0.22])
 
 if test "$with_session_info" = "auto" || test "$with_session_info" = "systemd"; then
     PKG_CHECK_MODULES([LIBSYSTEMD_LOGIN],

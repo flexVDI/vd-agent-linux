@@ -4,9 +4,14 @@ NULL =
 bin_PROGRAMS = src/spice-vdagent
 sbin_PROGRAMS = src/spice-vdagentd
 
-src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS) $(GLIB2_CFLAGS)
-src_spice_vdagent_LDADD = $(X_LIBS) $(SPICE_LIBS) $(GLIB2_LIBS)
-src_spice_vdagent_SOURCES = src/vdagent.c src/vdagent-x11.c src/vdagent-x11-randr.c src/vdagent-file-xfers.c src/udscs.c
+src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS) $(GLIB2_CFLAGS) $(ALSA_CFLAGS)
+src_spice_vdagent_LDADD = $(X_LIBS) $(SPICE_LIBS) $(GLIB2_LIBS) $(ALSA_LIBS)
+src_spice_vdagent_SOURCES = src/vdagent.c \
+                            src/vdagent-x11.c \
+                            src/vdagent-x11-randr.c \
+                            src/vdagent-file-xfers.c \
+                            src/vdagent-audio.c \
+                            src/udscs.c
 
 src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(LIBSYSTEMD_LOGIN_CFLAGS) \
   $(PCIACCESS_CFLAGS) $(SPICE_CFLAGS) $(GLIB2_CFLAGS) $(PIE_CFLAGS)
@@ -30,6 +35,7 @@ endif
 noinst_HEADERS = src/glib-compat.h \
                  src/session-info.h \
                  src/udscs.h \
+                 src/vdagent-audio.h \
                  src/vdagent-file-xfers.h \
                  src/vdagent-virtio-port.h \
                  src/vdagent-x11.h \
