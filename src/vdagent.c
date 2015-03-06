@@ -40,6 +40,7 @@
 #include "udscs.h"
 #include "vdagentd-proto.h"
 #include "vdagentd-proto-strings.h"
+#include "vdagent-audio.h"
 #include "vdagent-x11.h"
 #include "vdagent-file-xfers.h"
 
@@ -109,6 +110,16 @@ void daemon_read_complete(struct udscs_connection **connp,
         }
         free(data);
         break;
+    case VDAGENTD_AUDIO_VOLUME_SYNC: {
+        VDAgentAudioVolumeSync *avs = (VDAgentAudioVolumeSync *)data;
+        if (avs->is_playback) {
+            vdagent_audio_playback_sync(avs->mute, avs->nchannels, avs->volume);
+        } else {
+            vdagent_audio_record_sync(avs->mute, avs->nchannels, avs->volume);
+        }
+        free(data);
+        break;
+    }
     case VDAGENTD_FILE_XFER_DATA:
         if (vdagent_file_xfers != NULL) {
             vdagent_file_xfers_data(vdagent_file_xfers,

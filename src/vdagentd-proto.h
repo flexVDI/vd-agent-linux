@@ -36,6 +36,7 @@ enum {
     VDAGENTD_CLIPBOARD_DATA,    /* arg1: sel, arg 2: type, data: data */
     VDAGENTD_CLIPBOARD_RELEASE, /* arg1: selection */
     VDAGENTD_VERSION,           /* daemon -> client, data: version string */
+    VDAGENTD_AUDIO_VOLUME_SYNC,
     VDAGENTD_FILE_XFER_START,
     VDAGENTD_FILE_XFER_STATUS,
     VDAGENTD_FILE_XFER_DATA,

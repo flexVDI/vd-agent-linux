@@ -101,6 +101,7 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_SPARSE_MONITORS_CONFIG);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_GUEST_LINEEND_LF);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MAX_CLIPBOARD);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_AUDIO_VOLUME_SYNC);
 
     vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
@@ -154,6 +155,19 @@ static void do_client_monitors(struct vdagent_virtio_port *vport, int port_nr,
     reply.error = VD_AGENT_SUCCESS;
     vdagent_virtio_port_write(vport, port_nr, VD_AGENT_REPLY, 0,
                               (uint8_t *)&reply, sizeof(reply));
+}
+
+static void do_client_volume_sync(struct vdagent_virtio_port *vport, int port_nr,
+    VDAgentMessage *message_header,
+    VDAgentAudioVolumeSync *avs)
+{
+    if (active_session_conn == NULL) {
+        syslog(LOG_DEBUG, "No active session - Can't volume-sync");
+        return;
+    }
+
+    udscs_write(active_session_conn, VDAGENTD_AUDIO_VOLUME_SYNC, 0, 0,
+                (uint8_t *)avs, message_header->size);
 }
 
 static void do_client_capabilities(struct vdagent_virtio_port *vport,
@@ -378,6 +392,13 @@ int virtio_port_read_complete(
         VDAgentMaxClipboard *msg = (VDAgentMaxClipboard *)data;
         syslog(LOG_DEBUG, "Set max clipboard: %d", msg->max);
         max_clipboard = msg->max;
+        break;
+    case VD_AGENT_AUDIO_VOLUME_SYNC:
+        if (message_header->size < sizeof(VDAgentAudioVolumeSync))
+            goto size_error;
+
+        do_client_volume_sync(vport, port_nr, message_header,
+                (VDAgentAudioVolumeSync *)data);
         break;
     default:
         syslog(LOG_WARNING, "unknown message type %d, ignoring",
