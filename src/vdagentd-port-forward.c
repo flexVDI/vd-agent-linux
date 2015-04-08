@@ -333,7 +333,7 @@ void vdagent_port_forwarder_handle_fds(port_forwarder *pf, fd_set *readfds, fd_s
     }
 }
 
-static void listen_to(port_forwarder *pf, uint16_t port)
+static void listen_to(port_forwarder *pf, uint16_t port, const char *bind_address)
 {
     int sock, reuse_addr = 1;
     struct sockaddr_in addr;
@@ -345,7 +345,9 @@ static void listen_to(port_forwarder *pf, uint16_t port)
     } else {
         bzero((char *) &addr, addrLen);
         addr.sin_family = AF_INET;
-        inet_aton("127.0.0.1", &addr.sin_addr);
+        if (!bind_address)
+            bind_address = "127.0.0.1";
+        inet_aton(bind_address, &addr.sin_addr);
         addr.sin_port = htons(port);
         sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0 ||
@@ -353,7 +355,8 @@ static void listen_to(port_forwarder *pf, uint16_t port)
             setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(int)) ||
             setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &reuse_addr, sizeof(int)) ||
             bind(sock, (struct sockaddr *) &addr, addrLen) < 0) {
-            syslog(LOG_ERR, "Failed to listen to port %d: %m", port);
+            syslog(LOG_ERR, "Failed to listen to address %s, port %d: %m",
+                   bind_address, port);
         } else {
             listen(sock, 5);
             acceptor = new_connection();
@@ -424,34 +427,40 @@ static void start_closing(port_forwarder *pf, int id)
 void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data)
 {
     uint16_t port;
+    char * bind_address;
     int id;
     if (pf->debug) syslog(LOG_DEBUG, "Receiving command %d", (int)command);
     pf->client_disconnected = FALSE;
     switch (command) {
-        case VD_AGENT_PORT_FORWARD_LISTEN:
-            port = ((VDAgentPortForwardListenMessage *)data)->port;
-            listen_to(pf, port);
-            break;
-        case VD_AGENT_PORT_FORWARD_CONNECT:
-            remote_connected(pf, (VDAgentPortForwardConnectMessage *)data);
-            break;
-        case VD_AGENT_PORT_FORWARD_DATA:
-            read_data(pf, (VDAgentPortForwardDataMessage *)data);
-            break;
-        case VD_AGENT_PORT_FORWARD_ACK:
-            ack_data(pf, (VDAgentPortForwardAckMessage *)data);
-            break;
-        case VD_AGENT_PORT_FORWARD_CLOSE:
-            id = ((VDAgentPortForwardCloseMessage *)data)->id;
-            start_closing(pf, id);
-            break;
-        case VD_AGENT_PORT_FORWARD_SHUTDOWN:
-            port = ((VDAgentPortForwardShutdownMessage *)data)->port;
-            shutdown_port(pf, port);
-            break;
-        default:
-            pf->client_disconnected = TRUE;
-            syslog(LOG_WARNING, "Unknown command %d\n", (int)command);
-            break;
+    case VD_AGENT_PORT_FORWARD_LISTEN:
+        port = ((VDAgentPortForwardListenMessage *)data)->port;
+        listen_to(pf, port, NULL);
+        break;
+    case VD_AGENT_PORT_FORWARD_LISTEN_BIND:
+        port = ((VDAgentPortForwardListenBindMessage *)data)->port;
+        bind_address = ((VDAgentPortForwardListenBindMessage *)data)->bind_address;
+        listen_to(pf, port, bind_address);
+        break;
+    case VD_AGENT_PORT_FORWARD_CONNECT:
+        remote_connected(pf, (VDAgentPortForwardConnectMessage *)data);
+        break;
+    case VD_AGENT_PORT_FORWARD_DATA:
+        read_data(pf, (VDAgentPortForwardDataMessage *)data);
+        break;
+    case VD_AGENT_PORT_FORWARD_ACK:
+        ack_data(pf, (VDAgentPortForwardAckMessage *)data);
+        break;
+    case VD_AGENT_PORT_FORWARD_CLOSE:
+        id = ((VDAgentPortForwardCloseMessage *)data)->id;
+        start_closing(pf, id);
+        break;
+    case VD_AGENT_PORT_FORWARD_SHUTDOWN:
+        port = ((VDAgentPortForwardShutdownMessage *)data)->port;
+        shutdown_port(pf, port);
+        break;
+    default:
+        pf->client_disconnected = TRUE;
+        syslog(LOG_WARNING, "Unknown command %d\n", (int)command);
+        break;
     }
 }

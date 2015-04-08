@@ -388,6 +388,7 @@ int virtio_port_read_complete(
     case VD_AGENT_PORT_FORWARD_DATA:
     case VD_AGENT_PORT_FORWARD_ACK:
     case VD_AGENT_PORT_FORWARD_LISTEN:
+    case VD_AGENT_PORT_FORWARD_LISTEN_BIND:
     case VD_AGENT_PORT_FORWARD_SHUTDOWN:
         if (pf)
             do_port_forward_command(pf, message_header->type, data);
