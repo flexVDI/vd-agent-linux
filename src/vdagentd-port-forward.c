@@ -384,19 +384,16 @@ static void ack_data(port_forwarder *pf, VDAgentPortForwardAckMessage *msg)
 {
     connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(msg->id));
     if (conn) {
-        conn->data_sent -= msg->size;
-        if (pf->debug) syslog(LOG_DEBUG, "Connection %d ack %d bytes, %d remaining",
-                              (int)msg->id, (int)msg->size, conn->data_sent);
-    }
-}
-
-static void remote_connected(port_forwarder *pf, VDAgentPortForwardConnectMessage *msg) {
-    connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(msg->id));
-    if (conn) {
-        conn->connected = TRUE;
-        conn->ack_interval = msg->ack_interval;
+        if (conn->connected) {
+            conn->data_sent -= msg->size;
+            if (pf->debug) syslog(LOG_DEBUG, "Connection %d ack %d bytes, %d remaining",
+                                  (int)msg->id, (int)msg->size, conn->data_sent);
+        } else {
+            conn->connected = TRUE;
+            conn->ack_interval = msg->size;
+        }
     } else {
-        syslog(LOG_WARNING, "Unknown connection %d on connect command", msg->id);
+        syslog(LOG_WARNING, "Unknown connection %d on ACK command", msg->id);
     }
 }
 
@@ -440,9 +437,6 @@ void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data
         port = ((VDAgentPortForwardListenBindMessage *)data)->port;
         bind_address = ((VDAgentPortForwardListenBindMessage *)data)->bind_address;
         listen_to(pf, port, bind_address);
-        break;
-    case VD_AGENT_PORT_FORWARD_CONNECT:
-        remote_connected(pf, (VDAgentPortForwardConnectMessage *)data);
         break;
     case VD_AGENT_PORT_FORWARD_DATA:
         read_data(pf, (VDAgentPortForwardDataMessage *)data);
