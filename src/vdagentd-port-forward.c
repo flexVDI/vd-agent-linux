@@ -212,7 +212,7 @@ static void check_new_connection(gpointer key, gpointer value, gpointer user_dat
 {
     connection *acceptor = (connection *)value, *conn;
     port_forwarder *pf = (port_forwarder *)user_data;
-    VDAgentPortForwardConnectMessage msg;
+    VDAgentPortForwardAcceptedMessage msg;
     if (pf->client_disconnected) return;
 
     if (FD_ISSET(acceptor->socket, pf->fds.readfds)) {
@@ -333,22 +333,20 @@ void vdagent_port_forwarder_handle_fds(port_forwarder *pf, fd_set *readfds, fd_s
     }
 }
 
-static void listen_to(port_forwarder *pf, uint16_t port, const char *bind_address)
+static void listen_to(port_forwarder *pf, VDAgentPortForwardListenMessage *msg)
 {
     int sock, reuse_addr = 1;
     struct sockaddr_in addr;
     socklen_t addrLen = sizeof(struct sockaddr_in);
     connection *acceptor;
 
-    if (g_hash_table_lookup(pf->acceptors, GUINT_TO_POINTER(port))) {
-        syslog(LOG_INFO, "Already listening to port %d", (int)port);
+    if (g_hash_table_lookup(pf->acceptors, GUINT_TO_POINTER(msg->port))) {
+        syslog(LOG_INFO, "Already listening to port %d", (int)msg->port);
     } else {
         bzero((char *) &addr, addrLen);
         addr.sin_family = AF_INET;
-        if (!bind_address)
-            bind_address = "127.0.0.1";
-        inet_aton(bind_address, &addr.sin_addr);
-        addr.sin_port = htons(port);
+        inet_aton(msg->bind_address, &addr.sin_addr);
+        addr.sin_port = htons(msg->port);
         sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0 ||
             fcntl(sock, F_SETFL, O_NONBLOCK) ||
@@ -356,13 +354,13 @@ static void listen_to(port_forwarder *pf, uint16_t port, const char *bind_addres
             setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &reuse_addr, sizeof(int)) ||
             bind(sock, (struct sockaddr *) &addr, addrLen) < 0) {
             syslog(LOG_ERR, "Failed to listen to address %s, port %d: %m",
-                   bind_address, port);
+                   msg->bind_address, msg->port);
         } else {
             listen(sock, 5);
             acceptor = new_connection();
             acceptor->socket = sock;
             acceptor->connected = TRUE;
-            g_hash_table_insert(pf->acceptors, GUINT_TO_POINTER(port), acceptor);
+            g_hash_table_insert(pf->acceptors, GUINT_TO_POINTER(msg->port), acceptor);
         }
     }
 }
@@ -424,19 +422,12 @@ static void start_closing(port_forwarder *pf, int id)
 void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data)
 {
     uint16_t port;
-    char * bind_address;
     int id;
     if (pf->debug) syslog(LOG_DEBUG, "Receiving command %d", (int)command);
     pf->client_disconnected = FALSE;
     switch (command) {
     case VD_AGENT_PORT_FORWARD_LISTEN:
-        port = ((VDAgentPortForwardListenMessage *)data)->port;
-        listen_to(pf, port, NULL);
-        break;
-    case VD_AGENT_PORT_FORWARD_LISTEN_BIND:
-        port = ((VDAgentPortForwardListenBindMessage *)data)->port;
-        bind_address = ((VDAgentPortForwardListenBindMessage *)data)->bind_address;
-        listen_to(pf, port, bind_address);
+        listen_to(pf, (VDAgentPortForwardListenMessage *)data);
         break;
     case VD_AGENT_PORT_FORWARD_DATA:
         read_data(pf, (VDAgentPortForwardDataMessage *)data);
