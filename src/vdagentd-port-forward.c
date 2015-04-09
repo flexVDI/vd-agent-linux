@@ -112,16 +112,10 @@ static void delete_connection(gpointer value)
     free(conn);
 }
 
-static int get_connection_id(const connection * conn)
+static guint32 generate_connection_id()
 {
-    struct sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-    bzero((char *) &addr, addr_len);
-    if (!getpeername(conn->socket, (struct sockaddr *)&addr, &addr_len)) {
-        return ntohs(addr.sin_port);
-    } else {
-        return -1;
-    }
+    static guint32 seq = 0;
+    return ++seq;
 }
 
 port_forwarder *vdagent_port_forwarder_create(vdagent_port_forwarder_send_command_callback cb,
@@ -220,17 +214,12 @@ static void check_new_connection(gpointer key, gpointer value, gpointer user_dat
         if (!conn) {
             syslog(LOG_ERR, "Failed to accept connection on port %d: %m", GPOINTER_TO_UINT(key));
         } else {
-            msg.id = get_connection_id(conn);
+            msg.id = generate_connection_id();
             msg.ack_interval = WINDOW_SIZE / 2;
-            if (msg.id == -1) {
-                syslog(LOG_ERR, "Failed to accept connection on port %d", GPOINTER_TO_UINT(key));
-                delete_connection(conn);
-            } else {
-                msg.port = GPOINTER_TO_UINT(key);
-                g_hash_table_insert(pf->connections, GUINT_TO_POINTER(msg.id), conn);
-                try_send_command(pf, VD_AGENT_PORT_FORWARD_CONNECT,
-                                 (const uint8_t *)&msg, sizeof(msg));
-            }
+            msg.port = GPOINTER_TO_UINT(key);
+            g_hash_table_insert(pf->connections, GUINT_TO_POINTER(msg.id), conn);
+            try_send_command(pf, VD_AGENT_PORT_FORWARD_ACCEPTED,
+                             (const uint8_t *)&msg, sizeof(msg));
         }
     }
 }
