@@ -225,7 +225,7 @@ static void check_new_connection(gpointer key, gpointer value, gpointer user_dat
     }
 }
 
-static gboolean read_connection(port_forwarder *pf, connection *conn, int id)
+static gboolean read_connection(port_forwarder *pf, connection *conn, guint32 id)
 {
     const size_t HEAD_SIZE = sizeof(VDAgentPortForwardDataMessage);
     const size_t BUFFER_SIZE = VD_AGENT_MAX_DATA_SIZE - HEAD_SIZE;
@@ -251,7 +251,7 @@ static gboolean read_connection(port_forwarder *pf, connection *conn, int id)
     }
 }
 
-static gboolean write_connection(port_forwarder *pf, connection *conn, int id)
+static gboolean write_connection(port_forwarder *pf, connection *conn, guint32 id)
 {
     VDAgentPortForwardCloseMessage closeMsg;
     VDAgentPortForwardAckMessage ackMsg;
@@ -296,9 +296,10 @@ static gboolean check_connection_data(gpointer key, gpointer value, gpointer use
     connection *conn = (connection *)value;
     port_forwarder *pf = (port_forwarder *)user_data;
     gboolean remove = pf->client_disconnected;
+    guint32 id = GPOINTER_TO_UINT(key);
 
     if (!remove && FD_ISSET(conn->socket, pf->fds.readfds)) {
-        remove = read_connection(pf, conn, GPOINTER_TO_UINT(key));
+        remove = read_connection(pf, conn, id);
     }
 
     if (!remove && FD_ISSET(conn->socket, pf->fds.writefds)) {
@@ -395,7 +396,7 @@ static void shutdown_port(port_forwarder *pf, uint16_t port) {
     }
 }
 
-static void start_closing(port_forwarder *pf, int id)
+static void start_closing(port_forwarder *pf, guint32 id)
 {
     connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(id));
     if (conn) {
@@ -454,7 +455,7 @@ static void connect_remote(port_forwarder *pf, VDAgentPortForwardConnectMessage 
 void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data)
 {
     uint16_t port;
-    int id;
+    guint32 id;
     if (pf->debug) syslog(LOG_DEBUG, "Receiving command %d", (int)command);
     pf->client_disconnected = FALSE;
     switch (command) {
