@@ -384,6 +384,7 @@ int virtio_port_read_complete(
         max_clipboard = msg->max;
         break;
     case VD_AGENT_PORT_FORWARD_CLOSE:
+    case VD_AGENT_PORT_FORWARD_CONNECT:
     case VD_AGENT_PORT_FORWARD_DATA:
     case VD_AGENT_PORT_FORWARD_ACK:
     case VD_AGENT_PORT_FORWARD_LISTEN:

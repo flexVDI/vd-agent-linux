@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -408,6 +409,48 @@ static void start_closing(port_forwarder *pf, int id)
     }
 }
 
+static void connect_remote(port_forwarder *pf, VDAgentPortForwardConnectMessage *msg)
+{
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+    socklen_t addr_len = sizeof(serv_addr);
+    int sockfd;
+    connection * conn = NULL;
+    bzero((char *) &serv_addr, addr_len);
+
+    // TODO: Lots of potentially blocking calls here...
+    server = gethostbyname(msg->host);
+    if (!server) {
+        syslog(LOG_WARNING, "Host %s not found", msg->host);
+        return;
+    }
+    serv_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+    serv_addr.sin_port = htons(msg->port);
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd >= 0) {
+        if (connect(sockfd, (const struct sockaddr *)&serv_addr, addr_len) < 0) {
+            syslog(LOG_WARNING, "Error connecting to %s:%d", msg->host, msg->port);
+            return;
+        }
+        fcntl(sockfd, F_SETFL, O_NONBLOCK);
+        conn = new_connection();
+        conn->socket = sockfd;
+        conn->connected = TRUE;
+        g_hash_table_insert(pf->connections, GUINT_TO_POINTER(msg->id), conn);
+        syslog(LOG_DEBUG, "Connection established with id %d", (int)msg->id);
+
+        VDAgentPortForwardAckMessage ackMsg;
+        ackMsg.id = msg->id;
+        ackMsg.size = WINDOW_SIZE / 2;
+        try_send_command(pf, VD_AGENT_PORT_FORWARD_ACK,
+                        (const uint8_t *)&ackMsg, sizeof(ackMsg));
+    } else {
+        syslog(LOG_WARNING, "Error creating socket");
+    }
+}
+
 void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data)
 {
     uint16_t port;
@@ -417,6 +460,9 @@ void do_port_forward_command(port_forwarder *pf, uint32_t command, uint8_t *data
     switch (command) {
     case VD_AGENT_PORT_FORWARD_LISTEN:
         listen_to(pf, (VDAgentPortForwardListenMessage *)data);
+        break;
+    case VD_AGENT_PORT_FORWARD_CONNECT:
+        connect_remote(pf, (VDAgentPortForwardConnectMessage *)data);
         break;
     case VD_AGENT_PORT_FORWARD_DATA:
         read_data(pf, (VDAgentPortForwardDataMessage *)data);
