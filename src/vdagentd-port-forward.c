@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <syslog.h>
 #include <glib.h>
 #include "vdagentd-port-forward.h"
@@ -88,6 +89,7 @@ static void add_data_to_write_buffer(write_buffer **bufferp, const uint8_t * dat
 
 typedef struct connection {
     int connected;
+    int acked;
     int socket;
     write_buffer * buffer;
     uint32_t data_sent, data_received, ack_interval;
@@ -95,13 +97,7 @@ typedef struct connection {
 
 static connection *new_connection()
 {
-    connection *conn = (connection *)malloc(sizeof(connection));
-    if (conn) {
-        conn->connected = FALSE;
-        conn->buffer = NULL;
-        conn->data_sent = conn->data_received = 0;
-    }
-    return conn;
+    return (connection *)g_malloc0(sizeof(connection));
 }
 
 static void delete_connection(gpointer value)
@@ -110,7 +106,7 @@ static void delete_connection(gpointer value)
     shutdown(conn->socket, SHUT_RDWR);
     close(conn->socket);
     delete_write_buffer_recursive(conn->buffer);
-    free(conn);
+    g_free(conn);
 }
 
 static guint32 generate_connection_id()
@@ -161,9 +157,10 @@ static void add_connection_to_fd_set(gpointer key, gpointer value, gpointer user
 {
     connection *conn = (connection *)value;
     port_forwarder *pf = (port_forwarder *)user_data;
-    if (conn->connected && conn->data_sent < WINDOW_SIZE)
+    if (conn->acked && conn->data_sent < WINDOW_SIZE)
         FD_SET(conn->socket, pf->fds.readfds);
-    if (conn->buffer) FD_SET(conn->socket, pf->fds.writefds);
+    if (!conn->connected || conn->buffer)
+        FD_SET(conn->socket, pf->fds.writefds);
     if (conn->socket > pf->fds.nfds) pf->fds.nfds = conn->socket;
 }
 
@@ -189,6 +186,7 @@ static connection *accept_connection(int acceptor)
         fcntl(socket, F_SETFL, O_NONBLOCK);
         conn = new_connection();
         conn->socket = socket;
+        conn->connected = TRUE;
     }
     return conn;
 }
@@ -196,7 +194,8 @@ static connection *accept_connection(int acceptor)
 static void try_send_command(port_forwarder *pf, uint32_t command,
                              const uint8_t *data, uint32_t data_size)
 {
-    if (pf->debug) syslog(LOG_DEBUG, "Sending command %d with %d bytes", (int)command, (int)data_size);
+    if (pf->debug)
+        syslog(LOG_DEBUG, "Sending command %d with %d bytes", (int)command, (int)data_size);
     if (!pf->client_disconnected && pf->send_command(command, data, data_size) == -1) {
         pf->client_disconnected = TRUE;
         syslog(LOG_INFO, "Client has disconnected");
@@ -213,7 +212,8 @@ static void check_new_connection(gpointer key, gpointer value, gpointer user_dat
     if (FD_ISSET(acceptor->socket, pf->fds.readfds)) {
         conn = accept_connection(acceptor->socket);
         if (!conn) {
-            syslog(LOG_ERR, "Failed to accept connection on port %d: %m", GPOINTER_TO_UINT(key));
+            syslog(LOG_ERR, "Failed to accept connection on port %d: %m",
+                   GPOINTER_TO_UINT(key));
         } else {
             msg.id = generate_connection_id();
             msg.ack_interval = WINDOW_SIZE / 2;
@@ -237,6 +237,7 @@ static gboolean read_connection(port_forwarder *pf, connection *conn, guint32 id
     bytes_read = read(conn->socket, msg->data, BUFFER_SIZE);
     if (bytes_read <= 0) {
         /* Error or connection closed by peer */
+        syslog(LOG_DEBUG, "Read error, returned %d: %m", bytes_read);
         closeMsg.id = id;
         try_send_command(pf, VD_AGENT_PORT_FORWARD_CLOSE,
                          (const uint8_t *)&closeMsg, sizeof(closeMsg));
@@ -262,6 +263,7 @@ static gboolean write_connection(port_forwarder *pf, connection *conn, guint32 i
                               conn->buffer->size - conn->buffer->pos);
         if (bytes_written < 0) {
             /* Error */
+            syslog(LOG_DEBUG, "Write error, returned %d: %m", bytes_written);
             closeMsg.id = id;
             try_send_command(pf, VD_AGENT_PORT_FORWARD_CLOSE,
                              (const uint8_t *)&closeMsg, sizeof(closeMsg));
@@ -282,11 +284,35 @@ static gboolean write_connection(port_forwarder *pf, connection *conn, guint32 i
                 write_buffer * next = conn->buffer->next;
                 delete_write_buffer(conn->buffer);
                 conn->buffer = next;
-                if (!next && !conn->connected) return TRUE;
+                if (!next && !conn->acked) return TRUE;
             }
         }
     }
 
+    return FALSE;
+}
+
+static gboolean finish_connect(port_forwarder *pf, connection *conn, guint32 id)
+{
+    VDAgentPortForwardCloseMessage closeMsg;
+    VDAgentPortForwardAckMessage ackMsg;
+    int result = 0;
+    socklen_t result_len = sizeof(result);
+    if (getsockopt(conn->socket, SOL_SOCKET, SO_ERROR, &result, &result_len) < 0 ||
+            result != 0) {
+        if (result != 0) errno = result;
+        syslog(LOG_DEBUG, "Connection error: %m");
+        closeMsg.id = id;
+        try_send_command(pf, VD_AGENT_PORT_FORWARD_CLOSE,
+                         (const uint8_t *)&closeMsg, sizeof(closeMsg));
+        return TRUE;
+    }
+    conn->connected = conn->acked = TRUE;
+    syslog(LOG_DEBUG, "Connection established with id %d", id);
+    ackMsg.id = id;
+    ackMsg.size = WINDOW_SIZE / 2;
+    try_send_command(pf, VD_AGENT_PORT_FORWARD_ACK,
+                     (const uint8_t *)&ackMsg, sizeof(ackMsg));
     return FALSE;
 }
 
@@ -303,7 +329,10 @@ static gboolean check_connection_data(gpointer key, gpointer value, gpointer use
     }
 
     if (!remove && FD_ISSET(conn->socket, pf->fds.writefds)) {
-        remove = write_connection(pf, conn, GPOINTER_TO_UINT(key));
+        if (conn->connected)
+            remove = write_connection(pf, conn, id);
+        else
+            remove = finish_connect(pf, conn, id);
     }
 
     return remove;
@@ -350,7 +379,7 @@ static void listen_to(port_forwarder *pf, VDAgentPortForwardListenMessage *msg)
             listen(sock, 5);
             acceptor = new_connection();
             acceptor->socket = sock;
-            acceptor->connected = TRUE;
+            acceptor->acked = acceptor->connected = TRUE;
             g_hash_table_insert(pf->acceptors, GUINT_TO_POINTER(msg->port), acceptor);
         }
     }
@@ -363,8 +392,8 @@ static void read_data(port_forwarder *pf, VDAgentPortForwardDataMessage *msg)
         if (conn) {
             add_data_to_write_buffer(&conn->buffer, msg->data, msg->size);
         }
-        /* Ignore unknown connections, they happen when data/ack messages arrive before the close
-         * command has reached the other side.
+        /* Ignore unknown connections, they happen when data/ack messages arrive before
+         * the close command has reached the other side.
          */
     }
 }
@@ -373,12 +402,12 @@ static void ack_data(port_forwarder *pf, VDAgentPortForwardAckMessage *msg)
 {
     connection *conn = g_hash_table_lookup(pf->connections, GUINT_TO_POINTER(msg->id));
     if (conn) {
-        if (conn->connected) {
+        if (conn->acked) {
             conn->data_sent -= msg->size;
             if (pf->debug) syslog(LOG_DEBUG, "Connection %d ack %d bytes, %d remaining",
                                   (int)msg->id, (int)msg->size, conn->data_sent);
         } else {
-            conn->connected = TRUE;
+            conn->acked = TRUE;
             conn->ack_interval = msg->size;
         }
     } else {
@@ -402,7 +431,7 @@ static void start_closing(port_forwarder *pf, guint32 id)
     if (conn) {
         if (pf->debug) syslog(LOG_DEBUG, "Client closed connection %d", id);
         if (conn->buffer)
-            conn->connected = FALSE;
+            conn->acked = FALSE;
         else
             g_hash_table_remove(pf->connections, GUINT_TO_POINTER(id));
     } else {
@@ -413,14 +442,11 @@ static void start_closing(port_forwarder *pf, guint32 id)
 static void connect_remote(port_forwarder *pf, VDAgentPortForwardConnectMessage *msg)
 {
     struct sockaddr_in serv_addr;
-    struct hostent *server;
-    socklen_t addr_len = sizeof(serv_addr);
-    int sockfd;
-    connection * conn = NULL;
-    bzero((char *) &serv_addr, addr_len);
+    int addr_len = sizeof(serv_addr);
+    bzero(&serv_addr, addr_len);
 
-    // TODO: Lots of potentially blocking calls here...
-    server = gethostbyname(msg->host);
+    // TODO: gethostbyname is potentially blocking...
+    struct hostent *server = gethostbyname(msg->host);
     if (!server) {
         syslog(LOG_WARNING, "Host %s not found", msg->host);
         return;
@@ -429,24 +455,19 @@ static void connect_remote(port_forwarder *pf, VDAgentPortForwardConnectMessage 
     bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
     serv_addr.sin_port = htons(msg->port);
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd >= 0) {
-        if (connect(sockfd, (const struct sockaddr *)&serv_addr, addr_len) < 0) {
+        fcntl(sockfd, F_SETFL, O_NONBLOCK);
+        int ret = connect(sockfd, (const struct sockaddr *)&serv_addr, addr_len);
+        if (ret < 0 && errno != EINPROGRESS) {
             syslog(LOG_WARNING, "Error connecting to %s:%d", msg->host, msg->port);
+            close(sockfd);
             return;
         }
-        fcntl(sockfd, F_SETFL, O_NONBLOCK);
-        conn = new_connection();
+        connection * conn = new_connection();
         conn->socket = sockfd;
-        conn->connected = TRUE;
         g_hash_table_insert(pf->connections, GUINT_TO_POINTER(msg->id), conn);
-        syslog(LOG_DEBUG, "Connection established with id %d", (int)msg->id);
-
-        VDAgentPortForwardAckMessage ackMsg;
-        ackMsg.id = msg->id;
-        ackMsg.size = WINDOW_SIZE / 2;
-        try_send_command(pf, VD_AGENT_PORT_FORWARD_ACK,
-                        (const uint8_t *)&ackMsg, sizeof(ackMsg));
+        syslog(LOG_DEBUG, "Connecting to %s:%d...", msg->host, msg->port);
     } else {
         syslog(LOG_WARNING, "Error creating socket");
     }
