@@ -30,6 +30,7 @@ static const char * const vdagentd_messages[] = {
         "clipboard data",
         "clipboard release",
         "version",
+        "audio volume sync",
         "file xfer start",
         "file xfer status",
         "file xfer data",
