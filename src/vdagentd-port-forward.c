@@ -365,7 +365,13 @@ static void listen_to(port_forwarder *pf, VDAgentPortForwardListenMessage *msg)
     } else {
         bzero((char *) &addr, addrLen);
         addr.sin_family = AF_INET;
-        inet_aton(msg->bind_address, &addr.sin_addr);
+        // TODO: gethostbyname is potentially blocking...
+        struct hostent *host = gethostbyname(msg->bind_address);
+        if (!host) {
+            syslog(LOG_WARNING, "Host %s not found", msg->bind_address);
+            return;
+        }
+        bcopy((char *)host->h_addr, (char *)&addr.sin_addr.s_addr, host->h_length);
         addr.sin_port = htons(msg->port);
         sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0 ||
