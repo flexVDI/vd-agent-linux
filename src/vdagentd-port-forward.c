@@ -472,6 +472,7 @@ static void connect_remote(port_forwarder *pf, VDAgentPortForwardConnectMessage 
         }
         connection * conn = new_connection();
         conn->socket = sockfd;
+        conn->ack_interval = msg->ack_interval;
         g_hash_table_insert(pf->connections, GUINT_TO_POINTER(msg->id), conn);
         syslog(LOG_DEBUG, "Connecting to %s:%d...", msg->host, msg->port);
     } else {
