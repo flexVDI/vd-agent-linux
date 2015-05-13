@@ -8,12 +8,12 @@
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or   
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -43,6 +43,7 @@
 #include "vdagentd-xorg-conf.h"
 #include "vdagent-virtio-port.h"
 #include "session-info.h"
+#include "vdagentd-port-forward.h"
 
 struct agent_data {
     char *session;
@@ -76,6 +77,7 @@ static int quit = 0;
 static int retval = 0;
 static int client_connected = 0;
 static int max_clipboard = -1;
+static port_forwarder *pf = NULL;
 
 /* utility functions */
 /* vdagentd <-> spice-client communication handling */
@@ -102,6 +104,7 @@ static void send_capabilities(struct vdagent_virtio_port *vport,
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_GUEST_LINEEND_LF);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_MAX_CLIPBOARD);
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_AUDIO_VOLUME_SYNC);
+    VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_PORT_FORWARDING);
 
     vdagent_virtio_port_write(vport, VDP_CLIENT_PORT,
                               VD_AGENT_ANNOUNCE_CAPABILITIES, 0,
@@ -114,6 +117,7 @@ static void do_client_disconnect(void)
     if (client_connected) {
         udscs_server_write_all(server, VDAGENTD_CLIENT_DISCONNECTED, 0, 0,
                                NULL, 0);
+        vdagent_port_forwarder_client_disconnected(pf);
         client_connected = 0;
     }
 }
@@ -400,6 +404,15 @@ int virtio_port_read_complete(
         do_client_volume_sync(vport, port_nr, message_header,
                 (VDAgentAudioVolumeSync *)data);
         break;
+    case VD_AGENT_PORT_FORWARD_CLOSE:
+    case VD_AGENT_PORT_FORWARD_CONNECT:
+    case VD_AGENT_PORT_FORWARD_DATA:
+    case VD_AGENT_PORT_FORWARD_ACK:
+    case VD_AGENT_PORT_FORWARD_LISTEN:
+    case VD_AGENT_PORT_FORWARD_SHUTDOWN:
+        if (pf)
+            do_port_forward_command(pf, message_header->type, data);
+        break;
     default:
         syslog(LOG_WARNING, "unknown message type %d, ignoring",
                message_header->type);
@@ -642,7 +655,7 @@ void update_active_session_connection(struct udscs_connection *new_conn)
 
     release_clipboards();
 
-    check_xorg_resolution();    
+    check_xorg_resolution();
 }
 
 gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
@@ -765,6 +778,14 @@ void agent_read_complete(struct udscs_connection **connp,
     free(data);
 }
 
+int vdagent_port_forwarder_send_command(uint32_t command, const uint8_t *data,
+                                        uint32_t data_size) {
+    if (virtio_port)
+        return vdagent_virtio_port_write(virtio_port, VDP_CLIENT_PORT,
+                                         command, 0, data, data_size);
+    else return -1;
+}
+
 /* main */
 
 static void usage(FILE *fp)
@@ -831,6 +852,11 @@ void main_loop(void)
         n = vdagent_virtio_port_fill_fds(virtio_port, &readfds, &writefds);
         if (n >= nfds)
             nfds = n + 1;
+        if (pf) {
+            n = vdagent_port_forwarder_fill_fds(pf, &readfds, &writefds);
+            if (n >= nfds)
+                nfds = n + 1;
+        }
 
         if (session_info) {
             ck_fd = session_info_get_fd(session_info);
@@ -868,6 +894,10 @@ void main_loop(void)
                 }
                 do_client_disconnect();
                 client_connected = old_client_connected;
+            }
+
+            if(pf) {
+                vdagent_port_forwarder_handle_fds(pf, &readfds, &writefds);
             }
         }
         else if (only_once && once)
@@ -972,6 +1002,11 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    pf = vdagent_port_forwarder_create(vdagent_port_forwarder_send_command, debug);
+    if (!pf) {
+        syslog(LOG_ERR, "Port forwarder creation failed");
+    }
+
     if (want_session_info)
         session_info = session_info_create(debug);
     if (!session_info)
@@ -982,6 +1017,7 @@ int main(int argc, char *argv[])
 
     release_clipboards();
 
+    vdagent_port_forwarder_destroy(pf);
     vdagentd_uinput_destroy(&uinput);
     vdagent_virtio_port_flush(&virtio_port);
     vdagent_virtio_port_destroy(&virtio_port);

@@ -7,12 +7,12 @@
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or   
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -67,7 +67,7 @@ struct vdagent_virtio_port {
 
     /* Writes are stored in a linked list of buffers, with both the header
        + data for a single message in 1 buffer. */
-    struct vdagent_virtio_port_buf *write_buf;
+    struct vdagent_virtio_port_buf *write_buf, *last_buf;
 
     /* Callbacks */
     vdagent_virtio_port_read_callback read_callback;
@@ -177,21 +177,6 @@ void vdagent_virtio_port_handle_fds(struct vdagent_virtio_port **vportp,
         vdagent_virtio_port_do_write(vportp);
 }
 
-static struct vdagent_virtio_port_buf* vdagent_virtio_port_get_last_wbuf(
-    struct vdagent_virtio_port *vport)
-{
-    struct vdagent_virtio_port_buf *wbuf;
-
-    wbuf = vport->write_buf;
-    if (!wbuf)
-        return NULL;
-
-    while (wbuf->next)
-        wbuf = wbuf->next;
-
-    return wbuf;
-}
-
 int vdagent_virtio_port_write_start(
         struct vdagent_virtio_port *vport,
         uint32_t port_nr,
@@ -199,7 +184,7 @@ int vdagent_virtio_port_write_start(
         uint32_t message_opaque,
         uint32_t data_size)
 {
-    struct vdagent_virtio_port_buf *wbuf, *new_wbuf;
+    struct vdagent_virtio_port_buf *new_wbuf;
     VDIChunkHeader chunk_header;
     VDAgentMessage message_header;
 
@@ -222,7 +207,7 @@ int vdagent_virtio_port_write_start(
     memcpy(new_wbuf->buf + new_wbuf->write_pos, &chunk_header,
            sizeof(chunk_header));
     new_wbuf->write_pos += sizeof(chunk_header);
-    
+
     message_header.protocol = VD_AGENT_PROTOCOL;
     message_header.type = message_type;
     message_header.opaque = message_opaque;
@@ -233,11 +218,10 @@ int vdagent_virtio_port_write_start(
 
     if (!vport->write_buf) {
         vport->write_buf = new_wbuf;
-        return 0;
+    } else {
+        vport->last_buf->next = new_wbuf;
     }
-
-    wbuf = vdagent_virtio_port_get_last_wbuf(vport);
-    wbuf->next = new_wbuf;
+    vport->last_buf = new_wbuf;
 
     return 0;
 }
@@ -247,7 +231,7 @@ int vdagent_virtio_port_write_append(struct vdagent_virtio_port *vport,
 {
     struct vdagent_virtio_port_buf *wbuf;
 
-    wbuf = vdagent_virtio_port_get_last_wbuf(vport);
+    wbuf = vport->last_buf;
     if (!wbuf) {
         syslog(LOG_ERR, "can't append without a buffer");
         return -1;
@@ -487,6 +471,7 @@ static void vdagent_virtio_port_do_write(struct vdagent_virtio_port **vportp)
     wbuf->pos += n;
     if (wbuf->pos == wbuf->size) {
         vport->write_buf = wbuf->next;
+        if (!vport->write_buf) vport->last_buf = NULL;
         free(wbuf->buf);
         free(wbuf);
     }

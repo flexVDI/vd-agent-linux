@@ -18,6 +18,7 @@ src_spice_vdagentd_CFLAGS = $(DBUS_CFLAGS) $(LIBSYSTEMD_LOGIN_CFLAGS) \
 src_spice_vdagentd_LDADD = $(DBUS_LIBS) $(LIBSYSTEMD_LOGIN_LIBS) \
   $(PCIACCESS_LIBS) $(SPICE_LIBS) $(GLIB2_LIBS) $(PIE_LDFLAGS)
 src_spice_vdagentd_SOURCES = src/vdagentd.c \
+                             src/vdagentd-port-forward.c \
                              src/vdagentd-uinput.c \
                              src/vdagentd-xorg-conf.c \
                              src/vdagent-virtio-port.c \
@@ -40,6 +41,7 @@ noinst_HEADERS = src/glib-compat.h \
                  src/vdagent-virtio-port.h \
                  src/vdagent-x11.h \
                  src/vdagent-x11-priv.h \
+                 src/vdagentd-port-forward.h \
                  src/vdagentd-proto.h \
                  src/vdagentd-proto-strings.h \
                  src/vdagentd-uinput.h \
