@@ -130,7 +130,7 @@ fi
 
 # If no CFLAGS are set, set some sane default CFLAGS
 if test "$ac_test_CFLAGS" != set; then
-  DEFAULT_CFLAGS="-Wall -Werror -Wp,-D_FORTIFY_SOURCE=2 -fstack-protector --param=ssp-buffer-size=4"
+  DEFAULT_CFLAGS="-Wall -Werror -Wp,-D_FORTIFY_SOURCE=2 -fno-strict-aliasing -fstack-protector --param=ssp-buffer-size=4"
   for F in $DEFAULT_CFLAGS; do
     AC_MSG_CHECKING([whether $CC supports $F])
     save_CFLAGS="$CFLAGS"
