@@ -291,7 +291,8 @@ int main(int argc, char *argv[])
             LOG_USER);
 
     if (file_test(portdev) != 0) {
-        return 0;
+        syslog(LOG_ERR, "Cannot access vdagent virtio channel %s", portdev);
+        return 1;
     }
 
     if (do_daemonize)
