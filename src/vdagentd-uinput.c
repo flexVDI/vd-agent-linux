@@ -76,10 +76,6 @@ void vdagentd_uinput_destroy(struct vdagentd_uinput **uinputp)
 
     if (uinput->fd != -1)
         close(uinput->fd);
-
-    if (uinput->screen_info != NULL)
-        free(uinput->screen_info);
-
     free(uinput);
     *uinputp = NULL;
 }
