@@ -687,6 +687,7 @@ void agent_disconnect(struct udscs_connection *conn)
     agent_data->session = NULL;
     update_active_session_connection(NULL);
 
+    free(agent_data->screen_info);
     free(agent_data);
 }
 
