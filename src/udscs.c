@@ -46,8 +46,10 @@ struct udscs_connection {
     const char * const *type_to_string;
     int no_types;
     int debug;
-    struct ucred peer_cred;
     void *user_data;
+#ifndef UDSCS_NO_SERVER
+    struct ucred peer_cred;
+#endif
 
     /* Read stuff, single buffer, separate header and data buffer */
     int header_read;
@@ -350,6 +352,8 @@ int udscs_client_fill_fds(struct udscs_connection *conn, fd_set *readfds,
 }
 
 
+#ifndef UDSCS_NO_SERVER
+
 /* ---------- Server-side implementation ---------- */
 
 struct udscs_server {
@@ -563,3 +567,5 @@ int udscs_server_for_all_clients(struct udscs_server *server,
     }
     return r;
 }
+
+#endif
