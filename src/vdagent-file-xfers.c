@@ -104,7 +104,7 @@ void vdagent_file_xfers_destroy(struct vdagent_file_xfers *xfers)
     g_free(xfers);
 }
 
-AgentFileXferTask *vdagent_file_xfers_get_task(
+static AgentFileXferTask *vdagent_file_xfers_get_task(
     struct vdagent_file_xfers *xfers, uint32_t id)
 {
     AgentFileXferTask *task;

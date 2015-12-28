@@ -307,7 +307,7 @@ static void do_client_file_xfer(struct vdagent_virtio_port *vport,
     udscs_write(conn, msg_type, 0, 0, data, message_header->size);
 }
 
-int virtio_port_read_complete(
+static int virtio_port_read_complete(
         struct vdagent_virtio_port *vport,
         int port_nr,
         VDAgentMessage *message_header,
@@ -442,7 +442,7 @@ static void virtio_write_clipboard(uint8_t selection, uint32_t msg_type,
 }
 
 /* vdagentd <-> vdagent communication handling */
-int do_agent_clipboard(struct udscs_connection *conn,
+static int do_agent_clipboard(struct udscs_connection *conn,
         struct udscs_message_header *header, const uint8_t *data)
 {
     uint8_t selection = header->arg1;
@@ -594,7 +594,7 @@ static int connection_matches_active_session(struct udscs_connection **connp,
     return 1;
 }
 
-void release_clipboards(void)
+static void release_clipboards(void)
 {
     uint8_t sel;
 
@@ -607,7 +607,7 @@ void release_clipboards(void)
     }
 }
 
-void update_active_session_connection(struct udscs_connection *new_conn)
+static void update_active_session_connection(struct udscs_connection *new_conn)
 {
     if (session_info) {
         new_conn = NULL;
@@ -645,7 +645,7 @@ void update_active_session_connection(struct udscs_connection *new_conn)
     check_xorg_resolution();    
 }
 
-gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
+static gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
 {
     if (value == conn) {
         cancel_file_xfer(virtio_port, "Agent disc; cancelling file-xfer %u",
@@ -655,7 +655,7 @@ gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
         return 0;
 }
 
-void agent_connect(struct udscs_connection *conn)
+static void agent_connect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data;
 
@@ -677,7 +677,7 @@ void agent_connect(struct udscs_connection *conn)
     update_active_session_connection(conn);
 }
 
-void agent_disconnect(struct udscs_connection *conn)
+static void agent_disconnect(struct udscs_connection *conn)
 {
     struct agent_data *agent_data = udscs_get_user_data(conn);
 
@@ -691,7 +691,7 @@ void agent_disconnect(struct udscs_connection *conn)
     free(agent_data);
 }
 
-void agent_read_complete(struct udscs_connection **connp,
+static void agent_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, uint8_t *data)
 {
     struct agent_data *agent_data = udscs_get_user_data(*connp);
@@ -791,7 +791,7 @@ static void usage(FILE *fp)
             ,VERSION, portdev, vdagentd_socket, uinput_device);
 }
 
-void daemonize(void)
+static void daemonize(void)
 {
     int x;
     FILE *pidfile;
@@ -817,7 +817,7 @@ void daemonize(void)
     }
 }
 
-void main_loop(void)
+static void main_loop(void)
 {
     fd_set readfds, writefds;
     int n, nfds;

@@ -55,7 +55,7 @@ static struct udscs_connection *client = NULL;
 static int quit = 0;
 static int version_mismatch = 0;
 
-void daemon_read_complete(struct udscs_connection **connp,
+static void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, uint8_t *data)
 {
     switch (header->type) {
@@ -145,7 +145,7 @@ void daemon_read_complete(struct udscs_connection **connp,
     }
 }
 
-int client_setup(int reconnect)
+static int client_setup(int reconnect)
 {
     while (!quit) {
         client = udscs_connect(vdagentd_socket, daemon_read_complete, NULL,
@@ -185,7 +185,7 @@ static void quit_handler(int sig)
    to 10 seconds to get an 'all clear' from the child
    before we exit.  If we don't, we're able to exit with a
    status that indicates an error occured */
-void wait_and_exit(int s)
+static void wait_and_exit(int s)
 {
     char buf[4];
     struct pollfd p;
@@ -199,7 +199,7 @@ void wait_and_exit(int s)
     exit(1);
 }
 
-int daemonize(void)
+static int daemonize(void)
 {
     int x;
     int fd[2];
