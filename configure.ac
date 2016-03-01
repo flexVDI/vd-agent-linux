@@ -84,9 +84,16 @@ PKG_CHECK_MODULES(ALSA, [alsa >= 1.0.22])
 
 if test "$with_session_info" = "auto" || test "$with_session_info" = "systemd"; then
     PKG_CHECK_MODULES([LIBSYSTEMD_LOGIN],
-                      [libsystemd-login >= 42],
+                      [libsystemd >= 209],
                       [have_libsystemd_login="yes"],
                       [have_libsystemd_login="no"])
+    if test "$have_libsystemd_login" = "no"; then
+        # for backward compatibility with older systemd versions
+        PKG_CHECK_MODULES([LIBSYSTEMD_LOGIN],
+                          [libsystemd-login >= 42],
+                          [have_libsystemd_login="yes"],
+                          [have_libsystemd_login="no"])
+    fi
     if test x"$have_libsystemd_login" = "xno" && test "$with_session_info" = "systemd"; then
         AC_MSG_ERROR([libsystemd-login support explicitly requested, but some required packages are not available])
     fi
