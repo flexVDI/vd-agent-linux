@@ -32,8 +32,7 @@ src_spice_vdagentd_SOURCES += src/dummy-session-info.c
 endif
 endif
 
-noinst_HEADERS = src/glib-compat.h \
-                 src/session-info.h \
+noinst_HEADERS = src/session-info.h \
                  src/udscs.h \
                  src/vdagent-audio.h \
                  src/vdagent-file-xfers.h \
