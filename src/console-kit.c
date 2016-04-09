@@ -415,3 +415,10 @@ static char *console_kit_check_active_session_change(struct session_info *info)
 
     return info->active_session;
 }
+
+gboolean session_info_session_is_locked(struct session_info *info)
+{
+    /* TODO: It could be implemented based on Lock/Unlock signals from Session
+     * interface. */
+    return FALSE;
+}

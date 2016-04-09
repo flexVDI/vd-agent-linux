@@ -281,6 +281,13 @@ static void do_client_file_xfer(struct vdagent_virtio_port *vport,
                "active session, cancelling client file-xfer request %u",
                s->id, VD_AGENT_FILE_XFER_STATUS_CANCELLED);
             return;
+        } else if (session_info_session_is_locked(session_info)) {
+            syslog(LOG_DEBUG, "Session is locked, skipping file-xfer-start");
+            send_file_xfer_status(vport,
+               "User's session is locked and cannot start file transfer. "
+               "Cancelling client file-xfer request %u",
+               s->id, VD_AGENT_FILE_XFER_STATUS_ERROR);
+            return;
         }
         udscs_write(active_session_conn, VDAGENTD_FILE_XFER_START, 0, 0,
                     data, message_header->size);

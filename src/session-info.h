@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <glib.h>
 
 struct session_info;
 
@@ -35,5 +36,7 @@ int session_info_get_fd(struct session_info *ck);
 const char *session_info_get_active_session(struct session_info *ck);
 /* Note result must be free()-ed by caller */
 char *session_info_session_for_pid(struct session_info *ck, uint32_t pid);
+
+gboolean session_info_session_is_locked(struct session_info *si);
 
 #endif
