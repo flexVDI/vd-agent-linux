@@ -7,12 +7,12 @@
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or   
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -221,7 +221,7 @@ int vdagent_virtio_port_write_start(
     memcpy(new_wbuf->buf + new_wbuf->write_pos, &chunk_header,
            sizeof(chunk_header));
     new_wbuf->write_pos += sizeof(chunk_header);
-    
+
     message_header.protocol = VD_AGENT_PROTOCOL;
     message_header.type = message_type;
     message_header.opaque = message_opaque;

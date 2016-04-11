@@ -23,11 +23,11 @@
    X11 socket. If events have arrived and have already been read by libX11 from
    the socket triggered by other libX11 calls from this file, the select for
    read in the main loop, won't see these and our event loop won't get called!
-   
+
    Thus we must make sure that all queued events have been consumed, whenever
    we return to the main loop. IOW all (externally callable) functions in this
    file must end with calling XPending and consuming all queued events.
-   
+
    Calling XPending when-ever we return to the mainloop also ensures any
    pending writes are flushed. */
 
@@ -535,7 +535,7 @@ static void vdagent_x11_handle_event(struct vdagent_x11 *x11, XEvent event)
                                 event.xproperty.state == PropertyNewValue) {
             vdagent_x11_handle_selection_notify(x11, &event, 1);
         }
-        if (x11->selection_req_data && 
+        if (x11->selection_req_data &&
                                  event.xproperty.state == PropertyDelete) {
             vdagent_x11_handle_property_delete_notify(x11, &event);
         }
@@ -1230,7 +1230,7 @@ void vdagent_x11_clipboard_data(struct vdagent_x11 *x11, uint8_t selection,
     }
 
     event = &x11->selection_req->event;
-    type_from_event = vdagent_x11_target_to_type(x11, 
+    type_from_event = vdagent_x11_target_to_type(x11,
                                              x11->selection_req->selection,
                                              event->xselectionrequest.target);
     if (type_from_event != type ||
