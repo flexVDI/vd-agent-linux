@@ -34,6 +34,14 @@ struct session_info {
     char *active_session;
 };
 
+#define INTERFACE_CONSOLE_KIT "org.freedesktop.ConsoleKit"
+#define OBJ_PATH_CONSOLE_KIT  "/org/freedesktop/ConsoleKit"
+
+#define INTERFACE_CONSOLE_KIT_MANAGER    INTERFACE_CONSOLE_KIT ".Manager"
+#define OBJ_PATH_CONSOLE_KIT_MANAGER     OBJ_PATH_CONSOLE_KIT "/Manager"
+
+#define INTERFACE_CONSOLE_KIT_SEAT       INTERFACE_CONSOLE_KIT ".Seat"
+
 static char *console_kit_get_first_seat(struct session_info *ck);
 static char *console_kit_check_active_session_change(struct session_info *ck);
 
@@ -73,8 +81,9 @@ struct session_info *session_info_create(int verbose)
 
     /* Register for active session changes */
     snprintf(match, sizeof(match),
-             "type='signal',interface='org.freedesktop.ConsoleKit.Seat',"
-             "path='%s',member='ActiveSessionChanged'", ck->seat);
+             "type='signal',interface='%s',"
+             "path='%s',member='ActiveSessionChanged'",
+             INTERFACE_CONSOLE_KIT_SEAT, ck->seat);
     dbus_error_init(&error);
     dbus_bus_add_match(ck->connection, match, &error);
     if (dbus_error_is_set(&error)) {
@@ -111,9 +120,10 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     int type;
     char *seat = NULL;
 
-    message = dbus_message_new_method_call("org.freedesktop.ConsoleKit",
-                                           "/org/freedesktop/ConsoleKit/Manager",
-                                           "org.freedesktop.ConsoleKit.Manager",
+
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
+                                           OBJ_PATH_CONSOLE_KIT_MANAGER,
+                                           INTERFACE_CONSOLE_KIT_MANAGER,
                                            "GetSeats");
     if (message == NULL) {
         syslog(LOG_ERR, "Unable to create dbus message");
@@ -178,9 +188,9 @@ const char *session_info_get_active_session(struct session_info *ck)
     if (ck->active_session)
         return console_kit_check_active_session_change(ck);
 
-    message = dbus_message_new_method_call("org.freedesktop.ConsoleKit",
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
                                            ck->seat,
-                                           "org.freedesktop.ConsoleKit.Seat",
+                                           INTERFACE_CONSOLE_KIT_SEAT,
                                            "GetActiveSession");
     if (message == NULL) {
         syslog(LOG_ERR, "Unable to create dbus message");
@@ -241,9 +251,9 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
     if (!ck)
         return NULL;
 
-    message = dbus_message_new_method_call("org.freedesktop.ConsoleKit",
-                                           "/org/freedesktop/ConsoleKit/Manager",
-                                           "org.freedesktop.ConsoleKit.Manager",
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
+                                           OBJ_PATH_CONSOLE_KIT_MANAGER,
+                                           INTERFACE_CONSOLE_KIT_MANAGER,
                                            "GetSessionForUnixProcess");
     if (message == NULL) {
         syslog(LOG_ERR, "Unable to create dbus message");
