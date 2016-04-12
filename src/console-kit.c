@@ -32,6 +32,7 @@ struct session_info {
     int fd;
     char *seat;
     char *active_session;
+    int verbose;
 };
 
 #define INTERFACE_CONSOLE_KIT "org.freedesktop.ConsoleKit"
@@ -54,6 +55,8 @@ struct session_info *session_info_create(int verbose)
     info = calloc(1, sizeof(*info));
     if (!info)
         return NULL;
+
+    info->verbose = verbose;
 
     dbus_error_init(&error);
     info->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
@@ -172,6 +175,7 @@ exit:
             dbus_message_unref(message);
     }
 
+    syslog(LOG_INFO, "(console-kit) seat: %s", info->seat);
     return info->seat;
 }
 
@@ -360,5 +364,8 @@ static char *console_kit_check_active_session_change(struct session_info *info)
         dbus_connection_read_write(info->connection, 0);
     }
 
+    if (info->verbose)
+        syslog(LOG_DEBUG, "(console-kit) active-session: '%s'",
+               (info->active_session ? info->active_session : "None"));
     return info->active_session;
 }
