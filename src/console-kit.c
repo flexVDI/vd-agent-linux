@@ -35,6 +35,9 @@ struct session_info {
     char *active_session;
     int verbose;
     gchar *match_seat_signals;
+    gchar *match_session_signals;
+    gboolean session_is_locked;
+    gboolean session_idle_hint;
 };
 
 #define INTERFACE_CONSOLE_KIT "org.freedesktop.ConsoleKit"
@@ -45,7 +48,14 @@ struct session_info {
 
 #define INTERFACE_CONSOLE_KIT_SEAT       INTERFACE_CONSOLE_KIT ".Seat"
 
+#define INTERFACE_CONSOLE_KIT_SESSION    INTERFACE_CONSOLE_KIT ".Session"
+#define OBJ_PATH_CONSOLE_KIT_SESSION     OBJ_PATH_CONSOLE_KIT "/Session"
+
 #define SEAT_SIGNAL_ACTIVE_SESSION_CHANGED       "ActiveSessionChanged"
+
+#define SESSION_SIGNAL_LOCK                      "Lock"
+#define SESSION_SIGNAL_UNLOCK                    "Unlock"
+#define SESSION_SIGNAL_IDLE_HINT_CHANGED         "IdleHintChanged"
 
 static char *console_kit_get_first_seat(struct session_info *info);
 static char *console_kit_check_active_session_change(struct session_info *info);
@@ -63,6 +73,19 @@ static void si_dbus_match_remove(struct session_info *info)
                    info->match_seat_signals);
         g_free(info->match_seat_signals);
         info->match_seat_signals = NULL;
+    }
+
+    if (info->match_session_signals != NULL) {
+        dbus_error_init(&error);
+        dbus_bus_remove_match(info->connection,
+                              info->match_session_signals,
+                              &error);
+
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) session match removed: %s",
+                   info->match_session_signals);
+        g_free(info->match_session_signals);
+        info->match_session_signals = NULL;
     }
 }
 
@@ -98,6 +121,29 @@ static void si_dbus_match_rule_update(struct session_info *info)
             info->match_seat_signals = NULL;
         }
     }
+
+    /* Session signals */
+    if (info->active_session != NULL) {
+        info->match_session_signals =
+            g_strdup_printf ("type='signal',interface='%s',path='%s'",
+                             INTERFACE_CONSOLE_KIT_SESSION,
+                             info->active_session);
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) session match: %s",
+                   info->match_session_signals);
+
+        dbus_error_init(&error);
+        dbus_bus_add_match(info->connection,
+                           info->match_session_signals,
+                           &error);
+        if (dbus_error_is_set(&error)) {
+            syslog(LOG_WARNING, "Unable to add dbus rule match: %s",
+                   error.message);
+            dbus_error_free(&error);
+            g_free(info->match_session_signals);
+            info->match_session_signals = NULL;
+        }
+    }
 }
 
 static void
@@ -128,6 +174,7 @@ si_dbus_read_signals(struct session_info *info)
                 dbus_message_iter_get_basic(&iter, &session);
                 if (session != NULL && session[0] != '\0') {
                     info->active_session = g_strdup(session);
+                    si_dbus_match_rule_update(info);
                 } else {
                     syslog(LOG_WARNING, "(console-kit) received invalid session. "
                            "No active-session at the moment");
@@ -135,6 +182,25 @@ si_dbus_read_signals(struct session_info *info)
             } else {
                 syslog(LOG_ERR,
                        "ActiveSessionChanged message has unexpected type: '%c'",
+                       type);
+            }
+        } else if (g_strcmp0(member, SESSION_SIGNAL_LOCK) == 0) {
+            info->session_is_locked = TRUE;
+        } else if (g_strcmp0(member, SESSION_SIGNAL_UNLOCK) == 0) {
+            info->session_is_locked = FALSE;
+        } else if (g_strcmp0(member, SESSION_SIGNAL_IDLE_HINT_CHANGED) == 0) {
+            DBusMessageIter iter;
+            gint type;
+            dbus_bool_t idle_hint;
+
+            dbus_message_iter_init(message, &iter);
+            type = dbus_message_iter_get_arg_type(&iter);
+            if (type == DBUS_TYPE_BOOLEAN) {
+                dbus_message_iter_get_basic(&iter, &idle_hint);
+                info->session_idle_hint = (idle_hint);
+            } else {
+                syslog(LOG_ERR,
+                       "(console-kit) IdleHintChanged has unexpected type: '%c'",
                        type);
             }
         } else {
@@ -161,6 +227,8 @@ struct session_info *session_info_create(int verbose)
         return NULL;
 
     info->verbose = verbose;
+    info->session_is_locked = FALSE;
+    info->session_idle_hint = FALSE;
 
     dbus_error_init(&error);
     info->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
@@ -323,6 +391,7 @@ const char *session_info_get_active_session(struct session_info *info)
     }
 
     info->active_session = strdup(session);
+    si_dbus_match_rule_update(info);
 
 exit:
     if (reply != NULL) {
@@ -418,7 +487,20 @@ static char *console_kit_check_active_session_change(struct session_info *info)
 
 gboolean session_info_session_is_locked(struct session_info *info)
 {
-    /* TODO: It could be implemented based on Lock/Unlock signals from Session
-     * interface. */
-    return FALSE;
+    gboolean locked;
+
+    g_return_val_if_fail (info != NULL, FALSE);
+
+    /* Not every system does emit Lock and Unlock signals (for instance, such
+     * is the case for RHEL6) but most of the systems seems to emit the
+     * IdleHintChanged. So, we give priority to the Lock signal, if it is Locked
+     * we return that the session is locked, otherwise we double check with the
+     * IdleHint value */
+    si_dbus_read_signals(info);
+    locked = (info->session_is_locked || info->session_idle_hint);
+    if (info->verbose) {
+        syslog(LOG_DEBUG, "(console-kit) session is locked: %s",
+               locked ? "yes" : "no");
+    }
+    return locked;
 }
