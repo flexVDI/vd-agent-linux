@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <glib.h>
 
 struct session_info {
     DBusConnection *connection;
@@ -43,8 +44,63 @@ struct session_info {
 
 #define INTERFACE_CONSOLE_KIT_SEAT       INTERFACE_CONSOLE_KIT ".Seat"
 
+#define SEAT_SIGNAL_ACTIVE_SESSION_CHANGED       "ActiveSessionChanged"
+
 static char *console_kit_get_first_seat(struct session_info *info);
 static char *console_kit_check_active_session_change(struct session_info *info);
+
+static void
+si_dbus_read_signals(struct session_info *info)
+{
+    DBusMessage *message = NULL;
+
+    dbus_connection_read_write(info->connection, 0);
+    message = dbus_connection_pop_message(info->connection);
+    while (message != NULL) {
+        const char *member;
+
+        if (dbus_message_get_type(message) != DBUS_MESSAGE_TYPE_SIGNAL) {
+            syslog(LOG_WARNING, "(console-kit) received non signal message");
+            dbus_message_unref(message);
+            break;
+        }
+
+        member = dbus_message_get_member (message);
+        if (g_strcmp0(member, SEAT_SIGNAL_ACTIVE_SESSION_CHANGED) == 0) {
+            DBusMessageIter iter;
+            gint type;
+            gchar *session;
+
+            free(info->active_session);
+            info->active_session = NULL;
+
+            dbus_message_iter_init(message, &iter);
+            type = dbus_message_iter_get_arg_type(&iter);
+            /* Session should be an object path, but there is a bug in
+               ConsoleKit where it sends a string rather then an object_path
+               accept object_path too in case the bug ever gets fixed */
+            if (type == DBUS_TYPE_STRING || type == DBUS_TYPE_OBJECT_PATH) {
+                dbus_message_iter_get_basic(&iter, &session);
+                if (session != NULL && session[0] != '\0') {
+                    info->active_session = g_strdup(session);
+                } else {
+                    syslog(LOG_WARNING, "(console-kit) received invalid session. "
+                           "No active-session at the moment");
+                }
+            } else {
+                syslog(LOG_ERR,
+                       "ActiveSessionChanged message has unexpected type: '%c'",
+                       type);
+            }
+        } else if (info->verbose) {
+            syslog(LOG_DEBUG, "(console-kit) Signal not handled: %s", member);
+        }
+
+        dbus_message_unref(message);
+        dbus_connection_read_write(info->connection, 0);
+        message = dbus_connection_pop_message(info->connection);
+    }
+}
 
 struct session_info *session_info_create(int verbose)
 {
@@ -315,62 +371,10 @@ exit:
 
 static char *console_kit_check_active_session_change(struct session_info *info)
 {
-    DBusMessage *message = NULL;
-    DBusMessageIter iter;
-    char *session;
-    int type;
-
-    /* non blocking read of the next available message */
-    dbus_connection_read_write(info->connection, 0);
-    while ((message = dbus_connection_pop_message(info->connection))) {
-        if (dbus_message_get_type(message) == DBUS_MESSAGE_TYPE_SIGNAL) {
-            const char *member = dbus_message_get_member (message);
-            if (!strcmp(member, "NameAcquired")) {
-                dbus_message_unref(message);
-                continue;
-            }
-            if (strcmp(member, "ActiveSessionChanged")) {
-                syslog(LOG_ERR, "unexpected signal member: %s", member);
-                dbus_message_unref(message);
-                continue;
-            }
-        } else {
-            syslog(LOG_ERR, "received non signal message!");
-            dbus_message_unref(message);
-            continue;
-        }
-
-        free(info->active_session);
-        info->active_session = NULL;
-
-        dbus_message_iter_init(message, &iter);
-        type = dbus_message_iter_get_arg_type(&iter);
-        /* Session should be an object path, but there is a bug in
-           ConsoleKit where it sends a string rather then an object_path
-           accept object_path too in case the bug ever gets fixed */
-        if (type != DBUS_TYPE_STRING && type != DBUS_TYPE_OBJECT_PATH) {
-            syslog(LOG_ERR,
-                   "ActiveSessionChanged message has unexpected type: '%c'",
-                   type);
-            dbus_message_unref(message);
-            continue;
-        }
-
-        dbus_message_iter_get_basic(&iter, &session);
-        if (session != NULL && session[0] != '\0') {
-            info->active_session = strdup(session);
-        } else {
-            syslog(LOG_WARNING, "(console-kit) received invalid session. "
-                   "No active-session at the moment");
-        }
-        dbus_message_unref(message);
-
-        /* non blocking read of the next available message */
-        dbus_connection_read_write(info->connection, 0);
-    }
-
+    si_dbus_read_signals(info);
     if (info->verbose)
         syslog(LOG_DEBUG, "(console-kit) active-session: '%s'",
                (info->active_session ? info->active_session : "None"));
+
     return info->active_session;
 }
