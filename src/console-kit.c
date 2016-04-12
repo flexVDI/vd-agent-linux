@@ -42,40 +42,40 @@ struct session_info {
 
 #define INTERFACE_CONSOLE_KIT_SEAT       INTERFACE_CONSOLE_KIT ".Seat"
 
-static char *console_kit_get_first_seat(struct session_info *ck);
-static char *console_kit_check_active_session_change(struct session_info *ck);
+static char *console_kit_get_first_seat(struct session_info *info);
+static char *console_kit_check_active_session_change(struct session_info *info);
 
 struct session_info *session_info_create(int verbose)
 {
-    struct session_info *ck;
+    struct session_info *info;
     DBusError error;
     char match[1024];
 
-    ck = calloc(1, sizeof(*ck));
-    if (!ck)
+    info = calloc(1, sizeof(*info));
+    if (!info)
         return NULL;
 
     dbus_error_init(&error);
-    ck->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
-    if (ck->connection == NULL || dbus_error_is_set(&error)) {
+    info->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
+    if (info->connection == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
              syslog(LOG_ERR, "Unable to connect to system bus: %s",
                     error.message);
              dbus_error_free(&error);
         } else
              syslog(LOG_ERR, "Unable to connect to system bus");
-        free(ck);
+        free(info);
         return NULL;
     }
 
-    if (!dbus_connection_get_unix_fd(ck->connection, &ck->fd)) {
+    if (!dbus_connection_get_unix_fd(info->connection, &info->fd)) {
         syslog(LOG_ERR, "Unable to get connection fd");
-        session_info_destroy(ck);
+        session_info_destroy(info);
         return NULL;
     }
 
-    if (!console_kit_get_first_seat(ck)) {
-        session_info_destroy(ck);
+    if (!console_kit_get_first_seat(info)) {
+        session_info_destroy(info);
         return NULL;
     }
 
@@ -83,35 +83,35 @@ struct session_info *session_info_create(int verbose)
     snprintf(match, sizeof(match),
              "type='signal',interface='%s',"
              "path='%s',member='ActiveSessionChanged'",
-             INTERFACE_CONSOLE_KIT_SEAT, ck->seat);
+             INTERFACE_CONSOLE_KIT_SEAT, info->seat);
     dbus_error_init(&error);
-    dbus_bus_add_match(ck->connection, match, &error);
+    dbus_bus_add_match(info->connection, match, &error);
     if (dbus_error_is_set(&error)) {
         syslog(LOG_ERR, "Match Error (%s)", error.message);
-        session_info_destroy(ck);
+        session_info_destroy(info);
         return NULL;
     }
 
-    return ck;
+    return info;
 }
 
-void session_info_destroy(struct session_info *ck)
+void session_info_destroy(struct session_info *info)
 {
-    if (!ck)
+    if (!info)
         return;
 
-    dbus_connection_close(ck->connection);
-    free(ck->seat);
-    free(ck->active_session);
-    free(ck);
+    dbus_connection_close(info->connection);
+    free(info->seat);
+    free(info->active_session);
+    free(info);
 }
 
-int session_info_get_fd(struct session_info *ck)
+int session_info_get_fd(struct session_info *info)
 {
-    return ck->fd;
+    return info->fd;
 }
 
-static char *console_kit_get_first_seat(struct session_info *ck)
+static char *console_kit_get_first_seat(struct session_info *info)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -131,7 +131,7 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     }
 
     dbus_error_init(&error);
-    reply = dbus_connection_send_with_reply_and_block(ck->connection,
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
                                                       message,
                                                       -1,
                                                       &error);
@@ -161,7 +161,7 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     }
 
     dbus_message_iter_get_basic(&subiter, &seat);
-    ck->seat = strdup(seat);
+    info->seat = strdup(seat);
 
 exit:
     if (reply != NULL) {
@@ -172,24 +172,24 @@ exit:
             dbus_message_unref(message);
     }
 
-    return ck->seat;
+    return info->seat;
 }
 
-const char *session_info_get_active_session(struct session_info *ck)
+const char *session_info_get_active_session(struct session_info *info)
 {
     DBusError error;
     DBusMessage *message = NULL;
     DBusMessage *reply = NULL;
     char *session = NULL;
 
-    if (!ck)
+    if (!info)
         return NULL;
 
-    if (ck->active_session)
-        return console_kit_check_active_session_change(ck);
+    if (info->active_session)
+        return console_kit_check_active_session_change(info);
 
     message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
-                                           ck->seat,
+                                           info->seat,
                                            INTERFACE_CONSOLE_KIT_SEAT,
                                            "GetActiveSession");
     if (message == NULL) {
@@ -198,7 +198,7 @@ const char *session_info_get_active_session(struct session_info *ck)
     }
 
     dbus_error_init(&error);
-    reply = dbus_connection_send_with_reply_and_block(ck->connection,
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
                                                       message,
                                                       -1,
                                                       &error);
@@ -225,7 +225,7 @@ const char *session_info_get_active_session(struct session_info *ck)
         goto exit;
     }
 
-    ck->active_session = strdup(session);
+    info->active_session = strdup(session);
 
 exit:
     if (reply != NULL) {
@@ -237,10 +237,10 @@ exit:
     }
 
     /* In case the session was changed while we were running */
-    return console_kit_check_active_session_change(ck);
+    return console_kit_check_active_session_change(info);
 }
 
-char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
+char *session_info_session_for_pid(struct session_info *info, uint32_t pid)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -248,7 +248,7 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
     DBusMessageIter args;
     char *ssid = NULL;
 
-    if (!ck)
+    if (!info)
         return NULL;
 
     message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
@@ -267,7 +267,7 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
     }
 
     dbus_error_init(&error);
-    reply = dbus_connection_send_with_reply_and_block(ck->connection,
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
                                                       message,
                                                       -1,
                                                       &error);
@@ -309,7 +309,7 @@ exit:
     return ssid;
 }
 
-static char *console_kit_check_active_session_change(struct session_info *ck)
+static char *console_kit_check_active_session_change(struct session_info *info)
 {
     DBusMessage *message = NULL;
     DBusMessageIter iter;
@@ -317,8 +317,8 @@ static char *console_kit_check_active_session_change(struct session_info *ck)
     int type;
 
     /* non blocking read of the next available message */
-    dbus_connection_read_write(ck->connection, 0);
-    while ((message = dbus_connection_pop_message(ck->connection))) {
+    dbus_connection_read_write(info->connection, 0);
+    while ((message = dbus_connection_pop_message(info->connection))) {
         if (dbus_message_get_type(message) == DBUS_MESSAGE_TYPE_SIGNAL) {
             const char *member = dbus_message_get_member (message);
             if (!strcmp(member, "NameAcquired")) {
@@ -336,8 +336,8 @@ static char *console_kit_check_active_session_change(struct session_info *ck)
             continue;
         }
 
-        free(ck->active_session);
-        ck->active_session = NULL;
+        free(info->active_session);
+        info->active_session = NULL;
 
         dbus_message_iter_init(message, &iter);
         type = dbus_message_iter_get_arg_type(&iter);
@@ -353,12 +353,12 @@ static char *console_kit_check_active_session_change(struct session_info *ck)
         }
 
         dbus_message_iter_get_basic(&iter, &session);
-        ck->active_session = strdup(session);
+        info->active_session = strdup(session);
         dbus_message_unref(message);
 
         /* non blocking read of the next available message */
-        dbus_connection_read_write(ck->connection, 0);
+        dbus_connection_read_write(info->connection, 0);
     }
 
-    return ck->active_session;
+    return info->active_session;
 }
