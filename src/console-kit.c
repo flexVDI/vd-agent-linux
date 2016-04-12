@@ -34,6 +34,7 @@ struct session_info {
     char *seat;
     char *active_session;
     int verbose;
+    gchar *match_seat_signals;
 };
 
 #define INTERFACE_CONSOLE_KIT "org.freedesktop.ConsoleKit"
@@ -48,6 +49,55 @@ struct session_info {
 
 static char *console_kit_get_first_seat(struct session_info *info);
 static char *console_kit_check_active_session_change(struct session_info *info);
+
+static void si_dbus_match_remove(struct session_info *info)
+{
+    DBusError error;
+    if (info->match_seat_signals != NULL) {
+        dbus_error_init(&error);
+        dbus_bus_remove_match(info->connection,
+                              info->match_seat_signals,
+                              &error);
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) seat match removed: %s",
+                   info->match_seat_signals);
+        g_free(info->match_seat_signals);
+        info->match_seat_signals = NULL;
+    }
+}
+
+static void si_dbus_match_rule_update(struct session_info *info)
+{
+    DBusError error;
+
+    if (info->connection == NULL)
+        return;
+
+    si_dbus_match_remove(info);
+
+    /* Seat signals */
+    if (info->seat != NULL) {
+        info->match_seat_signals =
+            g_strdup_printf ("type='signal',interface='%s',path='%s',"
+                             "member='ActiveSessionChanged'",
+                             INTERFACE_CONSOLE_KIT_SEAT,
+                             info->seat);
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) seat match: %s",
+                   info->match_seat_signals);
+
+        dbus_error_init(&error);
+        dbus_bus_add_match(info->connection,
+                           info->match_seat_signals,
+                           &error);
+        if (dbus_error_is_set(&error)) {
+            syslog(LOG_WARNING, "Unable to add dbus rule match: %s",
+                   error.message);
+            dbus_error_free(&error);
+            g_free(info->match_seat_signals);
+        }
+    }
+}
 
 static void
 si_dbus_read_signals(struct session_info *info)
@@ -106,7 +156,6 @@ struct session_info *session_info_create(int verbose)
 {
     struct session_info *info;
     DBusError error;
-    char match[1024];
 
     info = calloc(1, sizeof(*info));
     if (!info)
@@ -138,19 +187,7 @@ struct session_info *session_info_create(int verbose)
         return NULL;
     }
 
-    /* Register for active session changes */
-    snprintf(match, sizeof(match),
-             "type='signal',interface='%s',"
-             "path='%s',member='ActiveSessionChanged'",
-             INTERFACE_CONSOLE_KIT_SEAT, info->seat);
-    dbus_error_init(&error);
-    dbus_bus_add_match(info->connection, match, &error);
-    if (dbus_error_is_set(&error)) {
-        syslog(LOG_ERR, "Match Error (%s)", error.message);
-        session_info_destroy(info);
-        return NULL;
-    }
-
+    si_dbus_match_rule_update(info);
     return info;
 }
 
@@ -159,6 +196,7 @@ void session_info_destroy(struct session_info *info)
     if (!info)
         return;
 
+    si_dbus_match_remove(info);
     dbus_connection_close(info->connection);
     free(info->seat);
     free(info->active_session);
