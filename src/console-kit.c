@@ -504,3 +504,9 @@ gboolean session_info_session_is_locked(struct session_info *info)
     }
     return locked;
 }
+
+gboolean session_info_is_user(struct session_info *info)
+{
+    /* TODO */
+    return TRUE;
+}

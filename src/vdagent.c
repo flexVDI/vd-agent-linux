@@ -110,6 +110,15 @@ static void daemon_read_complete(struct udscs_connection **connp,
         }
         free(data);
         break;
+    case VDAGENTD_FILE_XFER_DISABLE:
+        if (debug)
+            syslog(LOG_DEBUG, "Disabling file-xfers");
+
+        if (vdagent_file_xfers != NULL) {
+            vdagent_file_xfers_destroy(vdagent_file_xfers);
+            vdagent_file_xfers = NULL;
+        }
+        break;
     case VDAGENTD_AUDIO_VOLUME_SYNC: {
         VDAgentAudioVolumeSync *avs = (VDAgentAudioVolumeSync *)data;
         if (avs->is_playback) {

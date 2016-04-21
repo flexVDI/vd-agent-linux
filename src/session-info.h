@@ -38,5 +38,6 @@ const char *session_info_get_active_session(struct session_info *ck);
 char *session_info_session_for_pid(struct session_info *ck, uint32_t pid);
 
 gboolean session_info_session_is_locked(struct session_info *si);
+gboolean session_info_is_user(struct session_info *si);
 
 #endif

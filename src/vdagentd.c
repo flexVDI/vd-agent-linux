@@ -644,6 +644,15 @@ static void update_active_session_connection(struct udscs_connection *new_conn)
     active_session_conn = new_conn;
     if (debug)
         syslog(LOG_DEBUG, "%p is now the active session", new_conn);
+
+    if (active_session_conn && !session_info_is_user(session_info)) {
+        if (debug)
+            syslog(LOG_DEBUG, "New session agent does not belong to user: "
+                   "disabling file-xfer");
+        udscs_write(active_session_conn, VDAGENTD_FILE_XFER_DISABLE, 0, 0,
+                    NULL, 0);
+    }
+
     if (active_session_conn && mon_config)
         udscs_write(active_session_conn, VDAGENTD_MONITORS_CONFIG, 0, 0,
                     (uint8_t *)mon_config, sizeof(VDAgentMonitorsConfig) +

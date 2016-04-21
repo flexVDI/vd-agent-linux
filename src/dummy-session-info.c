@@ -49,3 +49,8 @@ gboolean session_is_locked(struct session_info *ck)
 {
     return FALSE;
 }
+
+gboolean session_info_is_user(struct session_info *si)
+{
+    return TRUE;
+}

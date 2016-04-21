@@ -34,6 +34,7 @@ static const char * const vdagentd_messages[] = {
         "file xfer start",
         "file xfer status",
         "file xfer data",
+        "file xfer disable",
         "client disconnected",
 };
 
