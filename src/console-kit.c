@@ -357,7 +357,12 @@ static char *console_kit_check_active_session_change(struct session_info *info)
         }
 
         dbus_message_iter_get_basic(&iter, &session);
-        info->active_session = strdup(session);
+        if (session != NULL && session[0] != '\0') {
+            info->active_session = strdup(session);
+        } else {
+            syslog(LOG_WARNING, "(console-kit) received invalid session. "
+                   "No active-session at the moment");
+        }
         dbus_message_unref(message);
 
         /* non blocking read of the next available message */
