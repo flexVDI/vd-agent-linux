@@ -95,6 +95,7 @@ static void si_dbus_match_rule_update(struct session_info *info)
                    error.message);
             dbus_error_free(&error);
             g_free(info->match_seat_signals);
+            info->match_seat_signals = NULL;
         }
     }
 }
