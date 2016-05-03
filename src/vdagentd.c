@@ -249,12 +249,14 @@ static void do_client_clipboard(struct vdagent_virtio_port *vport,
                 data, size);
 }
 
-static void cancel_file_xfer(struct vdagent_virtio_port *vport,
-                             const char *msg, uint32_t id)
+/* To be used by vdagentd for failures in file-xfer such as when file-xfer was
+ * cancelled or an error happened */
+static void send_file_xfer_status(struct vdagent_virtio_port *vport,
+                                  const char *msg, uint32_t id, uint32_t xfer_status)
 {
     VDAgentFileXferStatusMessage status = {
         .id = id,
-        .result = VD_AGENT_FILE_XFER_STATUS_CANCELLED,
+        .result = xfer_status,
     };
     syslog(LOG_WARNING, msg, id);
     if (vport)
@@ -274,10 +276,10 @@ static void do_client_file_xfer(struct vdagent_virtio_port *vport,
     case VD_AGENT_FILE_XFER_START: {
         VDAgentFileXferStartMessage *s = (VDAgentFileXferStartMessage *)data;
         if (!active_session_conn) {
-            cancel_file_xfer(vport,
+            send_file_xfer_status(vport,
                "Could not find an agent connnection belonging to the "
                "active session, cancelling client file-xfer request %u",
-               s->id);
+               s->id, VD_AGENT_FILE_XFER_STATUS_CANCELLED);
             return;
         }
         udscs_write(active_session_conn, VDAGENTD_FILE_XFER_START, 0, 0,
@@ -648,8 +650,10 @@ static void update_active_session_connection(struct udscs_connection *new_conn)
 static gboolean remove_active_xfers(gpointer key, gpointer value, gpointer conn)
 {
     if (value == conn) {
-        cancel_file_xfer(virtio_port, "Agent disc; cancelling file-xfer %u",
-                         GPOINTER_TO_UINT(key));
+        send_file_xfer_status(virtio_port,
+                              "Agent disc; cancelling file-xfer %u",
+                              GPOINTER_TO_UINT(key),
+                              VD_AGENT_FILE_XFER_STATUS_CANCELLED);
         return 1;
     } else
         return 0;
