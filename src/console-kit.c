@@ -109,12 +109,6 @@ si_dbus_read_signals(struct session_info *info)
     while (message != NULL) {
         const char *member;
 
-        if (dbus_message_get_type(message) != DBUS_MESSAGE_TYPE_SIGNAL) {
-            syslog(LOG_WARNING, "(console-kit) received non signal message");
-            dbus_message_unref(message);
-            break;
-        }
-
         member = dbus_message_get_member (message);
         if (g_strcmp0(member, SEAT_SIGNAL_ACTIVE_SESSION_CHANGED) == 0) {
             DBusMessageIter iter;
@@ -142,8 +136,12 @@ si_dbus_read_signals(struct session_info *info)
                        "ActiveSessionChanged message has unexpected type: '%c'",
                        type);
             }
-        } else if (info->verbose) {
-            syslog(LOG_DEBUG, "(console-kit) Signal not handled: %s", member);
+        } else {
+            if (dbus_message_get_type(message) != DBUS_MESSAGE_TYPE_SIGNAL) {
+                syslog(LOG_WARNING, "(console-kit) received non signal message");
+            } else if (info->verbose) {
+                syslog(LOG_DEBUG, "(console-kit) Signal not handled: %s", member);
+            }
         }
 
         dbus_message_unref(message);
