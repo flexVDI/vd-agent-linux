@@ -1,3 +1,18 @@
+Overview of changes in SPICE vdagent 0.17.0
+===========================================
+
+- Denies file-transfer in locked sessions
+  * systems under systemd (rhbz#1323623)
+  * systems under console-kit (rhbz#1323630)
+- Denies file-transfer in login screen
+  * systems under systemd (rhbz#1328761)
+  * systems under console-kit (rhbz#1323640)
+- Bump glib version to 2.28
+- Set exit code to 1 instead of 0 when virtio device cannot be opened
+- Fix double-free on uinput->screen_info (rhbz#1262635)
+- Code improvement over unix domain client server support (udcs)
+- Fix build compatiblity with different libsystemd versions (fdo#94209)
+
 Overview of changes in SPICE vdagent 0.16.0
 ===========================================
 
