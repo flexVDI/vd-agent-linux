@@ -31,7 +31,6 @@
 
 #include "vdagent-virtio-port.h"
 
-#define VDP_LAST_PORT VDP_SERVER_PORT
 
 struct vdagent_virtio_port_buf {
     uint8_t *buf;
@@ -63,7 +62,7 @@ struct vdagent_virtio_port {
     uint8_t chunk_data[VD_AGENT_MAX_DATA_SIZE];
 
     /* Per chunk port data */
-    struct vdagent_virtio_port_chunk_port_data port_data[VDP_LAST_PORT + 1];
+    struct vdagent_virtio_port_chunk_port_data port_data[VDP_END_PORT];
 
     /* Writes are stored in a linked list of buffers, with both the header
        + data for a single message in 1 buffer. */
@@ -142,7 +141,7 @@ void vdagent_virtio_port_destroy(struct vdagent_virtio_port **vportp)
         wbuf = next_wbuf;
     }
 
-    for (i = 0; i <= VDP_LAST_PORT; i++) {
+    for (i = 0; i < VDP_END_PORT; i++) {
         free(vport->port_data[i].message_data);
     }
 
@@ -271,7 +270,7 @@ void vdagent_virtio_port_flush(struct vdagent_virtio_port **vportp)
 
 void vdagent_virtio_port_reset(struct vdagent_virtio_port *vport, int port)
 {
-    if (port > VDP_LAST_PORT) {
+    if (port >= VDP_END_PORT) {
         syslog(LOG_ERR, "vdagent_virtio_port_reset port out of range");
         return;
     }
@@ -411,7 +410,7 @@ static void vdagent_virtio_port_do_read(struct vdagent_virtio_port **vportp)
                 vdagent_virtio_port_destroy(vportp);
                 return;
             }
-            if (vport->chunk_header.port > VDP_LAST_PORT) {
+            if (vport->chunk_header.port >= VDP_END_PORT) {
                 syslog(LOG_ERR, "chunk port %u out of range",
                        vport->chunk_header.port);
                 vdagent_virtio_port_destroy(vportp);

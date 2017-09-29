@@ -1,5 +1,5 @@
 AC_PREREQ(2.59)
-AC_INIT([spice-vdagent], [0.16.0])
+AC_INIT([spice-vdagent], [0.17.0])
 AC_CONFIG_SRCDIR([configure.ac])
 
 AM_CONFIG_HEADER([src/config.h])
@@ -77,16 +77,24 @@ AC_ARG_ENABLE([static-uinput],
               [enable_static_uinput="$enableval"],
               [enable_static_uinput="no"])
 
-PKG_CHECK_MODULES([GLIB2], [glib-2.0 >= 2.12])
+PKG_CHECK_MODULES([GLIB2], [glib-2.0 >= 2.28])
 PKG_CHECK_MODULES(X, [xfixes xrandr >= 1.3 xinerama x11])
 PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.12.8])
 PKG_CHECK_MODULES(ALSA, [alsa >= 1.0.22])
+PKG_CHECK_MODULES([DBUS], [dbus-1])
 
 if test "$with_session_info" = "auto" || test "$with_session_info" = "systemd"; then
     PKG_CHECK_MODULES([LIBSYSTEMD_LOGIN],
-                      [libsystemd-login >= 42],
+                      [libsystemd >= 209],
                       [have_libsystemd_login="yes"],
                       [have_libsystemd_login="no"])
+    if test "$have_libsystemd_login" = "no"; then
+        # for backward compatibility with older systemd versions
+        PKG_CHECK_MODULES([LIBSYSTEMD_LOGIN],
+                          [libsystemd-login >= 42],
+                          [have_libsystemd_login="yes"],
+                          [have_libsystemd_login="no"])
+    fi
     if test x"$have_libsystemd_login" = "xno" && test "$with_session_info" = "systemd"; then
         AC_MSG_ERROR([libsystemd-login support explicitly requested, but some required packages are not available])
     fi
@@ -100,19 +108,9 @@ fi
 AM_CONDITIONAL(HAVE_LIBSYSTEMD_LOGIN, test x"$have_libsystemd_login" = "xyes")
 
 if test "$with_session_info" = "auto" || test "$with_session_info" = "console-kit"; then
-    PKG_CHECK_MODULES([DBUS],
-                      [dbus-1],
-                      [have_console_kit="yes"],
-                      [have_console_kit="no"])
-    if test x"$have_console_kit" = "xno" && test "$with_session_info" = "console-kit"; then
-        AC_MSG_ERROR([console-kit support explicitly requested, but some required packages are not available])
-    fi
-    if test x"$have_console_kit" = "xyes"; then
-        AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support])
-        with_session_info="console-kit"
-    else
-        with_session_info="none"
-    fi
+    AC_DEFINE([HAVE_CONSOLE_KIT], [1], [If defined, vdagentd will be compiled with ConsoleKit support])
+    have_console_kit="yes"
+    with_session_info="console-kit"
 else
     have_console_kit="no"
 fi

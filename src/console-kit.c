@@ -7,12 +7,12 @@
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or   
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -26,83 +26,256 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <glib.h>
 
 struct session_info {
     DBusConnection *connection;
     int fd;
     char *seat;
     char *active_session;
+    int verbose;
+    gchar *match_seat_signals;
+    gchar *match_session_signals;
+    gboolean session_is_locked;
+    gboolean session_idle_hint;
 };
 
-static char *console_kit_get_first_seat(struct session_info *ck);
-static char *console_kit_check_active_session_change(struct session_info *ck);
+#define INTERFACE_CONSOLE_KIT "org.freedesktop.ConsoleKit"
+#define OBJ_PATH_CONSOLE_KIT  "/org/freedesktop/ConsoleKit"
+
+#define INTERFACE_CONSOLE_KIT_MANAGER    INTERFACE_CONSOLE_KIT ".Manager"
+#define OBJ_PATH_CONSOLE_KIT_MANAGER     OBJ_PATH_CONSOLE_KIT "/Manager"
+
+#define INTERFACE_CONSOLE_KIT_SEAT       INTERFACE_CONSOLE_KIT ".Seat"
+
+#define INTERFACE_CONSOLE_KIT_SESSION    INTERFACE_CONSOLE_KIT ".Session"
+#define OBJ_PATH_CONSOLE_KIT_SESSION     OBJ_PATH_CONSOLE_KIT "/Session"
+
+#define SEAT_SIGNAL_ACTIVE_SESSION_CHANGED       "ActiveSessionChanged"
+
+#define SESSION_SIGNAL_LOCK                      "Lock"
+#define SESSION_SIGNAL_UNLOCK                    "Unlock"
+#define SESSION_SIGNAL_IDLE_HINT_CHANGED         "IdleHintChanged"
+
+static char *console_kit_get_first_seat(struct session_info *info);
+static char *console_kit_check_active_session_change(struct session_info *info);
+
+static void si_dbus_match_remove(struct session_info *info)
+{
+    DBusError error;
+    if (info->match_seat_signals != NULL) {
+        dbus_error_init(&error);
+        dbus_bus_remove_match(info->connection,
+                              info->match_seat_signals,
+                              &error);
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) seat match removed: %s",
+                   info->match_seat_signals);
+        g_free(info->match_seat_signals);
+        info->match_seat_signals = NULL;
+    }
+
+    if (info->match_session_signals != NULL) {
+        dbus_error_init(&error);
+        dbus_bus_remove_match(info->connection,
+                              info->match_session_signals,
+                              &error);
+
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) session match removed: %s",
+                   info->match_session_signals);
+        g_free(info->match_session_signals);
+        info->match_session_signals = NULL;
+    }
+}
+
+static void si_dbus_match_rule_update(struct session_info *info)
+{
+    DBusError error;
+
+    if (info->connection == NULL)
+        return;
+
+    si_dbus_match_remove(info);
+
+    /* Seat signals */
+    if (info->seat != NULL) {
+        info->match_seat_signals =
+            g_strdup_printf ("type='signal',interface='%s',path='%s',"
+                             "member='ActiveSessionChanged'",
+                             INTERFACE_CONSOLE_KIT_SEAT,
+                             info->seat);
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) seat match: %s",
+                   info->match_seat_signals);
+
+        dbus_error_init(&error);
+        dbus_bus_add_match(info->connection,
+                           info->match_seat_signals,
+                           &error);
+        if (dbus_error_is_set(&error)) {
+            syslog(LOG_WARNING, "Unable to add dbus rule match: %s",
+                   error.message);
+            dbus_error_free(&error);
+            g_free(info->match_seat_signals);
+            info->match_seat_signals = NULL;
+        }
+    }
+
+    /* Session signals */
+    if (info->active_session != NULL) {
+        info->match_session_signals =
+            g_strdup_printf ("type='signal',interface='%s',path='%s'",
+                             INTERFACE_CONSOLE_KIT_SESSION,
+                             info->active_session);
+        if (info->verbose)
+            syslog(LOG_DEBUG, "(console-kit) session match: %s",
+                   info->match_session_signals);
+
+        dbus_error_init(&error);
+        dbus_bus_add_match(info->connection,
+                           info->match_session_signals,
+                           &error);
+        if (dbus_error_is_set(&error)) {
+            syslog(LOG_WARNING, "Unable to add dbus rule match: %s",
+                   error.message);
+            dbus_error_free(&error);
+            g_free(info->match_session_signals);
+            info->match_session_signals = NULL;
+        }
+    }
+}
+
+static void
+si_dbus_read_signals(struct session_info *info)
+{
+    DBusMessage *message = NULL;
+
+    dbus_connection_read_write(info->connection, 0);
+    message = dbus_connection_pop_message(info->connection);
+    while (message != NULL) {
+        const char *member;
+
+        member = dbus_message_get_member (message);
+        if (g_strcmp0(member, SEAT_SIGNAL_ACTIVE_SESSION_CHANGED) == 0) {
+            DBusMessageIter iter;
+            gint type;
+            gchar *session;
+
+            free(info->active_session);
+            info->active_session = NULL;
+
+            dbus_message_iter_init(message, &iter);
+            type = dbus_message_iter_get_arg_type(&iter);
+            /* Session should be an object path, but there is a bug in
+               ConsoleKit where it sends a string rather then an object_path
+               accept object_path too in case the bug ever gets fixed */
+            if (type == DBUS_TYPE_STRING || type == DBUS_TYPE_OBJECT_PATH) {
+                dbus_message_iter_get_basic(&iter, &session);
+                if (session != NULL && session[0] != '\0') {
+                    info->active_session = g_strdup(session);
+                    si_dbus_match_rule_update(info);
+                } else {
+                    syslog(LOG_WARNING, "(console-kit) received invalid session. "
+                           "No active-session at the moment");
+                }
+            } else {
+                syslog(LOG_ERR,
+                       "ActiveSessionChanged message has unexpected type: '%c'",
+                       type);
+            }
+        } else if (g_strcmp0(member, SESSION_SIGNAL_LOCK) == 0) {
+            info->session_is_locked = TRUE;
+        } else if (g_strcmp0(member, SESSION_SIGNAL_UNLOCK) == 0) {
+            info->session_is_locked = FALSE;
+        } else if (g_strcmp0(member, SESSION_SIGNAL_IDLE_HINT_CHANGED) == 0) {
+            DBusMessageIter iter;
+            gint type;
+            dbus_bool_t idle_hint;
+
+            dbus_message_iter_init(message, &iter);
+            type = dbus_message_iter_get_arg_type(&iter);
+            if (type == DBUS_TYPE_BOOLEAN) {
+                dbus_message_iter_get_basic(&iter, &idle_hint);
+                info->session_idle_hint = (idle_hint);
+            } else {
+                syslog(LOG_ERR,
+                       "(console-kit) IdleHintChanged has unexpected type: '%c'",
+                       type);
+            }
+        } else {
+            if (dbus_message_get_type(message) != DBUS_MESSAGE_TYPE_SIGNAL) {
+                syslog(LOG_WARNING, "(console-kit) received non signal message");
+            } else if (info->verbose) {
+                syslog(LOG_DEBUG, "(console-kit) Signal not handled: %s", member);
+            }
+        }
+
+        dbus_message_unref(message);
+        dbus_connection_read_write(info->connection, 0);
+        message = dbus_connection_pop_message(info->connection);
+    }
+}
 
 struct session_info *session_info_create(int verbose)
 {
-    struct session_info *ck;
+    struct session_info *info;
     DBusError error;
-    char match[1024];
 
-    ck = calloc(1, sizeof(*ck));
-    if (!ck)
+    info = calloc(1, sizeof(*info));
+    if (!info)
         return NULL;
 
+    info->verbose = verbose;
+    info->session_is_locked = FALSE;
+    info->session_idle_hint = FALSE;
+
     dbus_error_init(&error);
-    ck->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
-    if (ck->connection == NULL || dbus_error_is_set(&error)) {
+    info->connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
+    if (info->connection == NULL || dbus_error_is_set(&error)) {
         if (dbus_error_is_set(&error)) {
              syslog(LOG_ERR, "Unable to connect to system bus: %s",
                     error.message);
              dbus_error_free(&error);
         } else
              syslog(LOG_ERR, "Unable to connect to system bus");
-        free(ck);
+        free(info);
         return NULL;
     }
-    
-    if (!dbus_connection_get_unix_fd(ck->connection, &ck->fd)) {
+
+    if (!dbus_connection_get_unix_fd(info->connection, &info->fd)) {
         syslog(LOG_ERR, "Unable to get connection fd");
-        session_info_destroy(ck);
+        session_info_destroy(info);
         return NULL;
     }
 
-    if (!console_kit_get_first_seat(ck)) {
-        session_info_destroy(ck);
+    if (!console_kit_get_first_seat(info)) {
+        session_info_destroy(info);
         return NULL;
     }
 
-    /* Register for active session changes */
-    snprintf(match, sizeof(match),
-             "type='signal',interface='org.freedesktop.ConsoleKit.Seat',"
-             "path='%s',member='ActiveSessionChanged'", ck->seat);
-    dbus_error_init(&error);
-    dbus_bus_add_match(ck->connection, match, &error);
-    if (dbus_error_is_set(&error)) { 
-        syslog(LOG_ERR, "Match Error (%s)", error.message);
-        session_info_destroy(ck);
-        return NULL;
-    }
-
-    return ck;
+    si_dbus_match_rule_update(info);
+    return info;
 }
 
-void session_info_destroy(struct session_info *ck)
+void session_info_destroy(struct session_info *info)
 {
-    if (!ck)
+    if (!info)
         return;
 
-    dbus_connection_close(ck->connection);
-    free(ck->seat);
-    free(ck->active_session);
-    free(ck);
+    si_dbus_match_remove(info);
+    dbus_connection_close(info->connection);
+    free(info->seat);
+    free(info->active_session);
+    free(info);
 }
 
-int session_info_get_fd(struct session_info *ck)
+int session_info_get_fd(struct session_info *info)
 {
-    return ck->fd;
+    return info->fd;
 }
 
-static char *console_kit_get_first_seat(struct session_info *ck)
+static char *console_kit_get_first_seat(struct session_info *info)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -111,9 +284,10 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     int type;
     char *seat = NULL;
 
-    message = dbus_message_new_method_call("org.freedesktop.ConsoleKit",
-                                           "/org/freedesktop/ConsoleKit/Manager",
-                                           "org.freedesktop.ConsoleKit.Manager",
+
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
+                                           OBJ_PATH_CONSOLE_KIT_MANAGER,
+                                           INTERFACE_CONSOLE_KIT_MANAGER,
                                            "GetSeats");
     if (message == NULL) {
         syslog(LOG_ERR, "Unable to create dbus message");
@@ -121,7 +295,7 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     }
 
     dbus_error_init(&error);
-    reply = dbus_connection_send_with_reply_and_block(ck->connection,
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
                                                       message,
                                                       -1,
                                                       &error);
@@ -151,7 +325,7 @@ static char *console_kit_get_first_seat(struct session_info *ck)
     }
 
     dbus_message_iter_get_basic(&subiter, &seat);
-    ck->seat = strdup(seat);
+    info->seat = strdup(seat);
 
 exit:
     if (reply != NULL) {
@@ -162,25 +336,26 @@ exit:
             dbus_message_unref(message);
     }
 
-    return ck->seat;
+    syslog(LOG_INFO, "(console-kit) seat: %s", info->seat);
+    return info->seat;
 }
 
-const char *session_info_get_active_session(struct session_info *ck)
+const char *session_info_get_active_session(struct session_info *info)
 {
     DBusError error;
     DBusMessage *message = NULL;
     DBusMessage *reply = NULL;
     char *session = NULL;
 
-    if (!ck)
+    if (!info)
         return NULL;
 
-    if (ck->active_session)
-        return console_kit_check_active_session_change(ck);
+    if (info->active_session)
+        return console_kit_check_active_session_change(info);
 
-    message = dbus_message_new_method_call("org.freedesktop.ConsoleKit",
-                                           ck->seat,
-                                           "org.freedesktop.ConsoleKit.Seat",
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
+                                           info->seat,
+                                           INTERFACE_CONSOLE_KIT_SEAT,
                                            "GetActiveSession");
     if (message == NULL) {
         syslog(LOG_ERR, "Unable to create dbus message");
@@ -188,7 +363,7 @@ const char *session_info_get_active_session(struct session_info *ck)
     }
 
     dbus_error_init(&error);
-    reply = dbus_connection_send_with_reply_and_block(ck->connection,
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
                                                       message,
                                                       -1,
                                                       &error);
@@ -215,7 +390,8 @@ const char *session_info_get_active_session(struct session_info *ck)
         goto exit;
     }
 
-    ck->active_session = strdup(session);
+    info->active_session = strdup(session);
+    si_dbus_match_rule_update(info);
 
 exit:
     if (reply != NULL) {
@@ -227,10 +403,10 @@ exit:
     }
 
     /* In case the session was changed while we were running */
-    return console_kit_check_active_session_change(ck);
+    return console_kit_check_active_session_change(info);
 }
 
-char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
+char *session_info_session_for_pid(struct session_info *info, uint32_t pid)
 {
     DBusError error;
     DBusMessage *message = NULL;
@@ -238,12 +414,12 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
     DBusMessageIter args;
     char *ssid = NULL;
 
-    if (!ck)
+    if (!info)
         return NULL;
 
-    message = dbus_message_new_method_call("org.freedesktop.ConsoleKit",
-                                           "/org/freedesktop/ConsoleKit/Manager",
-                                           "org.freedesktop.ConsoleKit.Manager",
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
+                                           OBJ_PATH_CONSOLE_KIT_MANAGER,
+                                           INTERFACE_CONSOLE_KIT_MANAGER,
                                            "GetSessionForUnixProcess");
     if (message == NULL) {
         syslog(LOG_ERR, "Unable to create dbus message");
@@ -257,7 +433,7 @@ char *session_info_session_for_pid(struct session_info *ck, uint32_t pid)
     }
 
     dbus_error_init(&error);
-    reply = dbus_connection_send_with_reply_and_block(ck->connection,
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
                                                       message,
                                                       -1,
                                                       &error);
@@ -299,56 +475,103 @@ exit:
     return ssid;
 }
 
-static char *console_kit_check_active_session_change(struct session_info *ck)
+static char *console_kit_check_active_session_change(struct session_info *info)
 {
+    si_dbus_read_signals(info);
+    if (info->verbose)
+        syslog(LOG_DEBUG, "(console-kit) active-session: '%s'",
+               (info->active_session ? info->active_session : "None"));
+
+    return info->active_session;
+}
+
+gboolean session_info_session_is_locked(struct session_info *info)
+{
+    gboolean locked;
+
+    g_return_val_if_fail (info != NULL, FALSE);
+
+    /* Not every system does emit Lock and Unlock signals (for instance, such
+     * is the case for RHEL6) but most of the systems seems to emit the
+     * IdleHintChanged. So, we give priority to the Lock signal, if it is Locked
+     * we return that the session is locked, otherwise we double check with the
+     * IdleHint value */
+    si_dbus_read_signals(info);
+    locked = (info->session_is_locked || info->session_idle_hint);
+    if (info->verbose) {
+        syslog(LOG_DEBUG, "(console-kit) session is locked: %s",
+               locked ? "yes" : "no");
+    }
+    return locked;
+}
+
+/* This function should only be called after session_info_get_active_session
+ * in order to verify if active session belongs to user (non greeter) */
+gboolean session_info_is_user(struct session_info *info)
+{
+    DBusError error;
     DBusMessage *message = NULL;
-    DBusMessageIter iter;
-    char *session;
-    int type;
+    DBusMessage *reply = NULL;
+    gchar *session_type = NULL;
+    gboolean ret = TRUE;
 
-    /* non blocking read of the next available message */
-    dbus_connection_read_write(ck->connection, 0);
-    while ((message = dbus_connection_pop_message(ck->connection))) {
-        if (dbus_message_get_type(message) == DBUS_MESSAGE_TYPE_SIGNAL) {
-            const char *member = dbus_message_get_member (message);
-            if (!strcmp(member, "NameAcquired")) {
-                dbus_message_unref(message);
-                continue;
-            }
-            if (strcmp(member, "ActiveSessionChanged")) {
-                syslog(LOG_ERR, "unexpected signal member: %s", member);
-                dbus_message_unref(message);
-                continue;
-            }
-        } else {
-            syslog(LOG_ERR, "received non signal message!");
-            dbus_message_unref(message);
-            continue;
-        }
+    g_return_val_if_fail (info != NULL, TRUE);
+    g_return_val_if_fail (info->connection != NULL, TRUE);
+    g_return_val_if_fail (info->active_session != NULL, TRUE);
 
-        free(ck->active_session);
-        ck->active_session = NULL;
-
-        dbus_message_iter_init(message, &iter);
-        type = dbus_message_iter_get_arg_type(&iter);
-        /* Session should be an object path, but there is a bug in
-           ConsoleKit where it sends a string rather then an object_path
-           accept object_path too in case the bug ever gets fixed */
-        if (type != DBUS_TYPE_STRING && type != DBUS_TYPE_OBJECT_PATH) {
-            syslog(LOG_ERR,
-                   "ActiveSessionChanged message has unexpected type: '%c'",
-                   type);
-            dbus_message_unref(message);
-            continue;
-        }
-
-        dbus_message_iter_get_basic(&iter, &session);
-        ck->active_session = strdup(session);
-        dbus_message_unref(message);
-
-        /* non blocking read of the next available message */
-        dbus_connection_read_write(ck->connection, 0);
+    message = dbus_message_new_method_call(INTERFACE_CONSOLE_KIT,
+                                           info->active_session,
+                                           INTERFACE_CONSOLE_KIT_SESSION,
+                                           "GetSessionType");
+    if (message == NULL) {
+        syslog(LOG_ERR,
+               "(console-kit) Unable to create dbus message for GetSessionType");
+        return TRUE;
     }
 
-    return ck->active_session;
+    dbus_error_init(&error);
+    reply = dbus_connection_send_with_reply_and_block(info->connection,
+                                                      message,
+                                                      -1,
+                                                      &error);
+    if (reply == NULL || dbus_error_is_set(&error)) {
+        if (dbus_error_is_set(&error)) {
+            syslog(LOG_ERR, "GetSessionType failed: %s", error.message);
+            dbus_error_free(&error);
+        } else
+            syslog(LOG_ERR, "GetSessionType failed");
+        goto exit;
+    }
+
+    dbus_error_init(&error);
+    if (!dbus_message_get_args(reply,
+                               &error,
+                               DBUS_TYPE_STRING, &session_type,
+                               DBUS_TYPE_INVALID)) {
+        if (dbus_error_is_set(&error)) {
+            syslog(LOG_ERR,
+                   "(console-kit) fail to get session-type from reply: %s",
+                   error.message);
+            dbus_error_free(&error);
+        } else {
+            syslog(LOG_ERR, "(console-kit) fail to get session-type from reply");
+        }
+        session_type = NULL;
+        goto exit;
+    }
+
+    /* Empty session_type means user */
+    if (info->verbose)
+        syslog(LOG_DEBUG, "(console-kit) session-type is '%s'", session_type);
+
+    ret = (g_strcmp0 (session_type, "LoginWindow") != 0);
+
+exit:
+    if (reply != NULL) {
+        dbus_message_unref(reply);
+    }
+    if (message != NULL) {
+        dbus_message_unref(message);
+    }
+    return ret;
 }

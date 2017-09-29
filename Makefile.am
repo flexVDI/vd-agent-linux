@@ -4,7 +4,7 @@ NULL =
 bin_PROGRAMS = src/spice-vdagent
 sbin_PROGRAMS = src/spice-vdagentd
 
-src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS) $(GLIB2_CFLAGS) $(ALSA_CFLAGS)
+src_spice_vdagent_CFLAGS = $(X_CFLAGS) $(SPICE_CFLAGS) $(GLIB2_CFLAGS) $(ALSA_CFLAGS) -DUDSCS_NO_SERVER
 src_spice_vdagent_LDADD = $(X_LIBS) $(SPICE_LIBS) $(GLIB2_LIBS) $(ALSA_LIBS)
 src_spice_vdagent_SOURCES = src/vdagent.c \
                             src/vdagent-x11.c \
@@ -33,8 +33,7 @@ src_spice_vdagentd_SOURCES += src/dummy-session-info.c
 endif
 endif
 
-noinst_HEADERS = src/glib-compat.h \
-                 src/session-info.h \
+noinst_HEADERS = src/session-info.h \
                  src/udscs.h \
                  src/vdagent-audio.h \
                  src/vdagent-file-xfers.h \

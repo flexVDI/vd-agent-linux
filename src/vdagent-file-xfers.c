@@ -7,12 +7,12 @@
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or   
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -38,7 +38,6 @@
 
 #include "vdagentd-proto.h"
 #include "vdagent-file-xfers.h"
-#include "glib-compat.h"
 
 struct vdagent_file_xfers {
     GHashTable *xfers;
@@ -104,7 +103,7 @@ void vdagent_file_xfers_destroy(struct vdagent_file_xfers *xfers)
     g_free(xfers);
 }
 
-AgentFileXferTask *vdagent_file_xfers_get_task(
+static AgentFileXferTask *vdagent_file_xfers_get_task(
     struct vdagent_file_xfers *xfers, uint32_t id)
 {
     AgentFileXferTask *task;

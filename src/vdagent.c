@@ -7,12 +7,12 @@
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or   
+    the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the  
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
@@ -55,7 +55,7 @@ static struct udscs_connection *client = NULL;
 static int quit = 0;
 static int version_mismatch = 0;
 
-void daemon_read_complete(struct udscs_connection **connp,
+static void daemon_read_complete(struct udscs_connection **connp,
     struct udscs_message_header *header, uint8_t *data)
 {
     switch (header->type) {
@@ -110,6 +110,15 @@ void daemon_read_complete(struct udscs_connection **connp,
         }
         free(data);
         break;
+    case VDAGENTD_FILE_XFER_DISABLE:
+        if (debug)
+            syslog(LOG_DEBUG, "Disabling file-xfers");
+
+        if (vdagent_file_xfers != NULL) {
+            vdagent_file_xfers_destroy(vdagent_file_xfers);
+            vdagent_file_xfers = NULL;
+        }
+        break;
     case VDAGENTD_AUDIO_VOLUME_SYNC: {
         VDAgentAudioVolumeSync *avs = (VDAgentAudioVolumeSync *)data;
         if (avs->is_playback) {
@@ -145,7 +154,7 @@ void daemon_read_complete(struct udscs_connection **connp,
     }
 }
 
-int client_setup(int reconnect)
+static int client_setup(int reconnect)
 {
     while (!quit) {
         client = udscs_connect(vdagentd_socket, daemon_read_complete, NULL,
@@ -185,7 +194,7 @@ static void quit_handler(int sig)
    to 10 seconds to get an 'all clear' from the child
    before we exit.  If we don't, we're able to exit with a
    status that indicates an error occured */
-void wait_and_exit(int s)
+static void wait_and_exit(int s)
 {
     char buf[4];
     struct pollfd p;
@@ -199,7 +208,7 @@ void wait_and_exit(int s)
     exit(1);
 }
 
-int daemonize(void)
+static int daemonize(void)
 {
     int x;
     int fd[2];
@@ -291,7 +300,8 @@ int main(int argc, char *argv[])
             LOG_USER);
 
     if (file_test(portdev) != 0) {
-        return 0;
+        syslog(LOG_ERR, "Cannot access vdagent virtio channel %s", portdev);
+        return 1;
     }
 
     if (do_daemonize)

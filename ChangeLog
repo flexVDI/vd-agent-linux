@@ -26,7 +26,7 @@ spice-vdagent-0.12.1
 
 spice-vdagent-0.12.0
 --------------------
-* Full multi-monitor and arbritary resolution support, this requires a new   
+* Full multi-monitor and arbritary resolution support, this requires a new
   enough xorg-x11-drv-qxl driver, as well as a new enough host
 * systemd service support, using systemd hardware acivation
 * Use syslog for logging, rather then logging to private log files
