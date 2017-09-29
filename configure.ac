@@ -1,5 +1,5 @@
 AC_PREREQ(2.59)
-AC_INIT([spice-vdagent], [0.15.0])
+AC_INIT([spice-vdagent], [0.16.0])
 AC_CONFIG_SRCDIR([configure.ac])
 
 AM_CONFIG_HEADER([src/config.h])
@@ -79,7 +79,7 @@ AC_ARG_ENABLE([static-uinput],
 
 PKG_CHECK_MODULES([GLIB2], [glib-2.0 >= 2.12])
 PKG_CHECK_MODULES(X, [xfixes xrandr >= 1.3 xinerama x11])
-PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.12.5])
+PKG_CHECK_MODULES(SPICE, [spice-protocol >= 0.12.8])
 PKG_CHECK_MODULES(ALSA, [alsa >= 1.0.22])
 
 if test "$with_session_info" = "auto" || test "$with_session_info" = "systemd"; then
@@ -130,7 +130,7 @@ fi
 
 # If no CFLAGS are set, set some sane default CFLAGS
 if test "$ac_test_CFLAGS" != set; then
-  DEFAULT_CFLAGS="-Wall -Werror -Wp,-D_FORTIFY_SOURCE=2 -fstack-protector --param=ssp-buffer-size=4"
+  DEFAULT_CFLAGS="-Wall -Werror -Wp,-D_FORTIFY_SOURCE=2 -fno-strict-aliasing -fstack-protector --param=ssp-buffer-size=4"
   for F in $DEFAULT_CFLAGS; do
     AC_MSG_CHECKING([whether $CC supports $F])
     save_CFLAGS="$CFLAGS"

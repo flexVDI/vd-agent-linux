@@ -1,0 +1,10 @@
+Overview of changes in SPICE vdagent 0.16.0
+===========================================
+
+- Add audio volume synchronization support
+- Add support for maximum clipboard size
+- Add support for more clipboard targets (STRING and TIMESTAMP)
+- Improve handling of transfers of multiple files
+- Fix transfer of >2GB files on 32 bit systems
+- XSpice improvements
+- Various bug fixes related to resolution changes

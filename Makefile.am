@@ -82,6 +82,7 @@ manpage_DATA = data/spice-vdagent.1	\
                data/spice-vdagentd.1
 
 EXTRA_DIST =					\
+	NEWS					\
 	README.RHEL-5				\
 	data/70-spice-vdagentd.rules		\
 	data/spice-vdagent.desktop		\
